@@ -4,32 +4,20 @@ import subprocess
 import traceback
 import threading
 
-from enum import Enum
-from settings import get_settings
+from utils.settings import get_settings
 from time import sleep
 from pathlib import Path
 from random import randint
-
-
-class JobStatusEnum(str, Enum):
-    """
-    Enum representing the status of a job.
-    """
-
-    UPLOADING = "uploading"
-    UPLOADED = "uploaded"
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
+from utils.job import JobStatusEnum
 
 
 settings = get_settings()
 
-api_broker_url = settings.API_BROKER_URL
+api_broker_url = settings.API_BACKEND_URL
 api_file_storage_dir = settings.API_FILE_STORAGE_DIR
 api_version = settings.API_VERSION
 api_url = f"{api_broker_url}/api/{api_version}/transcriber"
+api_token = settings.OIDC_TOKEN
 
 
 def get_logger():
@@ -130,7 +118,8 @@ def get_next_job(url: str) -> dict:
     """
     Get the next job from the API broker.
     """
-    response = requests.get(f"{api_url}/next")
+    header = {"Authorization": f"Bearer {api_token}"}
+    response = requests.get(f"{api_url}/next", headers=header)
     response.raise_for_status()
 
     job = response.json()["result"]
@@ -148,8 +137,8 @@ def get_file(uuid: str) -> bool:
     """
     Download the file from the API broker.
     """
-
-    response = requests.get(f"{api_url}/{uuid}/file")
+    header = {"Authorization": f"Bearer {api_token}"}
+    response = requests.get(f"{api_url}/{uuid}/file", headers=header)
     response.raise_for_status()
 
     if response.status_code != 200:
@@ -169,8 +158,9 @@ def put_status(uuid: str, status: JobStatusEnum, error: str) -> bool:
     Update the job status in the API broker.
     """
     try:
+        header = {"Authorization": f"Bearer {api_token}"}
         response = requests.put(
-            f"{api_url}/{uuid}", json={"status": status, "error": error}
+            f"{api_url}/{uuid}", json={"status": status, "error": error}, headers=header
         )
         response.raise_for_status()
     except requests.RequestException as e:
@@ -183,10 +173,12 @@ def put_file(uuid: str, output_format: str) -> bool:
     """
     Upload the file to the API broker.
     """
-
+    header = {"Authorization": f"Bearer {api_token}"}
     file_path = Path(api_file_storage_dir) / f"{uuid}.{output_format}"
     with open(file_path, "rb") as fd:
-        response = requests.put(f"{api_url}/{uuid}/result", files={"file": fd})
+        response = requests.put(
+            f"{api_url}/{uuid}/result", files={"file": fd}, headers=header
+        )
         response.raise_for_status()
 
 
@@ -344,13 +336,13 @@ def main(worker_id: int):
 
 if __name__ == "__main__":
     try:
-        if settings.DEBUG:
+        if settings.API_DEBUG:
             logger.setLevel(logging.DEBUG)
             logger.debug("Debug mode is enabled.")
 
-        wokers = settings.WORKERS
+        workers = settings.API_WORKERS
 
-        for i in range(wokers):
+        for i in range(workers):
             thread = threading.Thread(target=main, args=(i,))
             thread.start()
     except KeyboardInterrupt:

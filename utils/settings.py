@@ -15,12 +15,14 @@ class Settings(BaseSettings):
         validate_assignment=True,
     )
 
-    DEBUG: bool = True
-    API_BROKER_URL: str = ""
+    API_DEBUG: bool = True
+    API_BACKEND_URL: str = ""
     API_FILE_STORAGE_DIR: str = ""
-    TRANSCODER_FILE_STORAGE_DIR: str = ""
     API_VERSION: str = "v1"
-    WORKERS: int = 2
+    API_WORKERS: int = 2
+
+    # OIDC configuration.
+    OIDC_TOKEN: str = ""
 
 
 @lru_cache
@@ -30,7 +32,5 @@ def get_settings() -> Settings:
     """
     if not os.path.exists(Settings().API_FILE_STORAGE_DIR):
         os.makedirs(Settings().API_FILE_STORAGE_DIR)
-    if not os.path.exists(Settings().TRANSCODER_FILE_STORAGE_DIR):
-        os.makedirs(Settings().TRANSCODER_FILE_STORAGE_DIR)
 
     return Settings()
