@@ -16,7 +16,7 @@ settings = get_settings()
 api_broker_url = settings.API_BACKEND_URL
 api_file_storage_dir = settings.API_FILE_STORAGE_DIR
 api_version = settings.API_VERSION
-api_url = f"{api_broker_url}/api/{api_version}/transcriber"
+api_url = f"{api_broker_url}/api/{api_version}/job"
 api_token = settings.OIDC_TOKEN
 
 
@@ -133,12 +133,12 @@ def get_next_job(url: str) -> dict:
     return job
 
 
-def get_file(uuid: str) -> bool:
+def get_file(uuid: str, user_id: str) -> bool:
     """
     Download the file from the API broker.
     """
     header = {"Authorization": f"Bearer {api_token}"}
-    response = requests.get(f"{api_url}/{uuid}/file", headers=header)
+    response = requests.get(f"{api_url}/{user_id}/{uuid}/file", headers=header)
     response.raise_for_status()
 
     if response.status_code != 200:
@@ -169,7 +169,7 @@ def put_status(uuid: str, status: JobStatusEnum, error: str) -> bool:
     return True
 
 
-def put_file(uuid: str, output_format: str) -> bool:
+def put_file(user_id: str, uuid: str, output_format: str) -> bool:
     """
     Upload the file to the API broker.
     """
@@ -177,7 +177,9 @@ def put_file(uuid: str, output_format: str) -> bool:
     file_path = Path(api_file_storage_dir) / f"{uuid}.{output_format}"
     with open(file_path, "rb") as fd:
         response = requests.put(
-            f"{api_url}/{uuid}/result", files={"file": fd}, headers=header
+            f"{api_url}/{user_id}/{uuid}/result",
+            files={"file": fd},
+            headers=header,
         )
         response.raise_for_status()
 
@@ -282,28 +284,30 @@ def main(worker_id: int):
             # Sleep for a random time between 5 and 10 seconds
             # to avoid hammering the API broker.
             sleep_time = randint(5, 10)
-            logger.debug(
-                f"[{worker_id}] Sleeping for {sleep_time} seconds before checking for jobs."
-            )
+            # logger.debug(
+            #     f"[{worker_id}] Sleeping for {sleep_time} seconds before checking for jobs."
+            # )
             sleep(sleep_time)
 
             if not (job := get_next_job(api_broker_url)):
                 continue
 
             uuid = job["uuid"]
+            user_id = job["user_id"]
             language = job["language"]
             model_type = job["model_type"]
             model = get_model(model_type, language)
             output_format = job["output_format"]
 
             logger.info(f"[{worker_id}] Processing job {uuid}:")
+            logger.info(f"  User ID: {user_id}")
             logger.info(f"  Language: {language}")
             logger.info(f"  Model Type: {model_type}")
             logger.info(f"  Model: {model}")
             logger.info(f"  Output Format: {output_format}")
 
             # Download the file
-            get_file(uuid)
+            get_file(uuid, user_id)
 
             # Transcode the file
             transcode_file(uuid)
@@ -315,7 +319,7 @@ def main(worker_id: int):
             # postprocess_srt(uuid, output_format)
 
             # Upload the resulting SRT
-            put_file(f"{uuid}", output_format)
+            put_file(user_id, uuid, output_format)
 
             # Remove all files
             delete_files(uuid)
