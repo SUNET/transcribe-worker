@@ -38,7 +38,41 @@ def get_logger():
 logger = get_logger()
 
 
-def transcode_file(filename: str):
+def downscale_file(filename: str) -> bool:
+    """
+    Downscale videos to a smaller size.
+    """
+
+    output_filename = f"{filename}.mp4"
+
+    command = [
+        "ffmpeg",
+        "-i",
+        str(Path(api_file_storage_dir) / filename),
+        "-vf",
+        "scale=-2:320",
+        str(Path(api_file_storage_dir) / output_filename),
+    ]
+
+    try:
+        ffmpeg_cmd = " ".join(command)
+        logger.debug(f"Downscaling command: {ffmpeg_cmd}")
+        result = subprocess.run(command, capture_output=True)
+
+        # Check exit code
+        if result.returncode != 0:
+            logger.error(f"Error during downscaling: {result.stderr.decode()}")
+            return False
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error during downscaling: {e}")
+        raise e
+    else:
+        logger.info(f"Downscaling completed: {output_filename}")
+
+    return True
+
+
+def transcode_file(filename: str) -> bool:
     """
     Transcode the audio file using ffmpeg.
     The transcoded format should be 16kHz mono WAV.
@@ -78,7 +112,9 @@ def transcode_file(filename: str):
     return True
 
 
-def transcribe_file(filename: str, language: str, model: str, output_format: str):
+def transcribe_file(
+    filename: str, language: str, model: str, output_format: str
+) -> bool:
     """
     Transcribe the audio file using whisper.cpp, we expect the executable
     to be in PATH.
@@ -268,6 +304,11 @@ def delete_files(uuid: str) -> bool:
         srt_file_path.unlink()
         logger.info(f"Deleted file {srt_file_path}")
 
+    mp4_file_path = Path(api_file_storage_dir) / f"{uuid}.mp4"
+    if mp4_file_path.exists():
+        mp4_file_path.unlink()
+        logger.info(f"Deleted file {mp4_file_path}")
+
     return True
 
 
@@ -283,7 +324,7 @@ def main(worker_id: int):
         try:
             # Sleep for a random time between 5 and 10 seconds
             # to avoid hammering the API broker.
-            sleep_time = randint(5, 10)
+            sleep_time = randint(10, 60)
             # logger.debug(
             #     f"[{worker_id}] Sleeping for {sleep_time} seconds before checking for jobs."
             # )
@@ -315,11 +356,17 @@ def main(worker_id: int):
             # Transcribe the file
             transcribe_file(uuid, language, model, output_format)
 
+            # Downscale the video file
+            downscale_file(uuid)
+
             # Postprocess subtitles
             # postprocess_srt(uuid, output_format)
 
             # Upload the resulting SRT
             put_file(user_id, uuid, output_format)
+
+            # Uplaod the downscaled video
+            put_file(user_id, uuid, "mp4")
 
             # Remove all files
             delete_files(uuid)
