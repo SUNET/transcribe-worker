@@ -30,7 +30,14 @@ def main(worker_id: int):
 
         sleep(sleep_time)
 
-        with TranscriptionJob(logger, api_url, api_token, api_file_storage_dir) as job:
+        with TranscriptionJob(
+            logger,
+            api_url,
+            api_token,
+            api_file_storage_dir,
+            hf_whisper=settings.HF_WHISPER,
+            hf_token=settings.HF_TOKEN,
+        ) as job:
             job.start()
 
 

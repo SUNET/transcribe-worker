@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # OIDC configuration.
     OIDC_TOKEN: str = ""
 
+    # HF Whisper configuration.
+    HF_WHISPER: bool = True
+    HF_TOKEN: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

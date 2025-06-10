@@ -1,9 +1,12 @@
 import requests
 import subprocess
 import logging
+import json
 
 from enum import Enum
 from pathlib import Path
+from typing import Optional
+from utils.whisper import WhisperAudioTranscriber
 
 
 class JobStatusEnum(str, Enum):
@@ -26,11 +29,15 @@ class TranscriptionJob:
         api_url: str,
         api_token: str,
         api_file_storage_dir: str,
+        hf_whisper: Optional[bool] = False,
+        hf_token: Optional[str] = None,
     ):
         self.logger = logger
         self.api_url = api_url
         self.api_token = api_token
         self.api_file_storage_dir = api_file_storage_dir
+        self.hf_whisper = hf_whisper
+        self.hf_token = hf_token
 
     def __enter__(self) -> "TranscriptionJob":
         """
@@ -71,6 +78,7 @@ class TranscriptionJob:
         self.filename = self.uuid
 
         self.logger.info(f"Starting transcription job {self.uuid}")
+        self.logger.info(f"  HF: {self.hf_whisper}")
         self.logger.info(f"  User: {self.user_id}")
         self.logger.info(f"  Language: {self.language}")
         self.logger.info(f"  Model: {self.model}")
@@ -87,7 +95,12 @@ class TranscriptionJob:
             self.__put_status(JobStatusEnum.FAILED, error="Transcoding failed")
             return False
 
-        if not self.__transcribe_file():
+        if self.hf_whisper:
+            res = self.__transcribe_hf()
+        else:
+            res = self.__transcribe_file()
+
+        if not res:
             self.__put_status(JobStatusEnum.FAILED, error="Transcription failed")
             return False
 
@@ -101,6 +114,41 @@ class TranscriptionJob:
 
         self.logger.info(f"Job {self.uuid} completed successfully")
         self.__put_status(JobStatusEnum.COMPLETED, error=None)
+
+        return True
+
+    def __transcribe_hf(self) -> bool:
+        """
+        Transcribe the audio file using Hugging Face Whisper.
+        """
+        self.logger.info("Starting transcription with Hugging Face Whisper")
+        try:
+            transcriber = WhisperAudioTranscriber(
+                audio_path=str(
+                    Path(self.api_file_storage_dir) / f"{self.filename}.wav"
+                ),
+                model_name=self.model,
+                language=self.language,
+                hf_token=self.hf_token,
+            )
+
+            transcriber.transcribe()
+            srt = transcriber.subtitles()
+            drz = transcriber.diarization()
+
+            with open(
+                Path(self.api_file_storage_dir) / f"{self.filename}.srt", "w"
+            ) as srt_file:
+                srt_file.write(srt)
+
+            with open(
+                Path(self.api_file_storage_dir) / f"{self.filename}.json", "w"
+            ) as json_file:
+                json_file.write(json.dumps(dict(drz)))
+
+        except Exception as e:
+            self.logger.error(f"Error during transcription: {e}")
+            return False
 
         return True
 
@@ -302,6 +350,13 @@ class TranscriptionJob:
                 file_path = (
                     Path(self.api_file_storage_dir) / f"{self.uuid}.{output_format}"
                 )
+
+                if not file_path.exists():
+                    self.logger.debug(
+                        f"File {file_path} does not exist, not uploading."
+                    )
+                    continue
+
                 with open(file_path, "rb") as fd:
                     response = requests.put(
                         f"{self.api_url}/{self.user_id}/{self.uuid}/result",
@@ -326,20 +381,39 @@ class TranscriptionJob:
         use the default whisper model.
         """
 
-        file_path = "models/"
-        file_path += "sv" if self.language == "sv" else "en"
+        if self.hf_whisper and self.language == "sv":
+            match self.model_type:
+                case "tiny":
+                    model = "KBLab/kb-whisper-tiny"
+                case "base":
+                    model = "KBLab/kb-whisper-base"
+                case "large":
+                    model = "KBLab/kb-whisper-large"
+        elif self.hf_whisper and self.language == "en":
+            match self.model_type:
+                case "tiny":
+                    model = "openai/whisper-tiny"
+                case "base":
+                    model = "openai/whisper-base"
+                case "large":
+                    model = "openai/whisper-large"
+        else:
+            model = "models/"
+            model += "sv" if self.language == "sv" else "en"
 
-        match self.model_type:
-            case "tiny":
-                file_path += "_tiny"
-            case "base":
-                file_path += "_base"
-            case "large":
-                file_path += "_large"
-            case _:
-                file_path += "_base"
+            match self.model_type:
+                case "tiny":
+                    model += "_tiny"
+                case "base":
+                    model += "_base"
+                case "large":
+                    model += "_large"
+                case _:
+                    model += "_base"
 
-        return f"{file_path}.bin"
+            model += ".bin"
+
+        return model
 
     def __cleanup(self) -> bool:
         """

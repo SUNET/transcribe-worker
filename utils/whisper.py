@@ -54,16 +54,13 @@ class WhisperAudioTranscriber:
         self.diarization_pipeline.to(torch.device(self.__device))
 
     def transcribe(self) -> list:
-        try:
-            self.__result = self.pipe(
-                self.__audio_path,
-                chunk_length_s=30,
-                generate_kwargs={"task": "transcribe", "language": self.__language},
-            )
+        self.__result = self.pipe(
+            self.__audio_path,
+            chunk_length_s=30,
+            generate_kwargs={"task": "transcribe", "language": self.__language},
+        )
 
-            return result
-        except Exception:
-            return None
+        return self.__result
 
     def diarization(self) -> dict:
         if not self.diarization_pipeline:
@@ -85,7 +82,6 @@ class WhisperAudioTranscriber:
             return {
                 "full_transcription": self.__result["text"],
                 "segments": aligned_segments,
-                "diarization": diarization,
                 "speaker_count": len(list(diarization.labels())),
             }
 
@@ -115,32 +111,6 @@ class WhisperAudioTranscriber:
             index += 1
 
         return subtitles
-
-    def format_transcription(self, include_timestamps=True) -> str:
-        if not self.__result or "segments" not in self.__result:
-            raise Exception(
-                "Transcription result is not available or does not contain segments."
-            )
-
-        formatted_text = []
-        current_speaker = None
-
-        for segment in self.__result["segments"]:
-            speaker = segment["speaker"]
-            text = segment["text"]
-            start_time = segment["start"]
-
-            if speaker != current_speaker:
-                if include_timestamps:
-                    timestamp_str = f"[{self.__format_timestamp(start_time)}]"
-                    formatted_text.append(f"\n{speaker} {timestamp_str}: {text}")
-                else:
-                    formatted_text.append(f"\n{speaker}: {text}")
-                current_speaker = speaker
-            else:
-                formatted_text.append(f" {text}")
-
-        return "".join(formatted_text).strip()
 
     def __get_device(self, torch: torch):
         if torch.cuda.is_available():
@@ -216,15 +186,3 @@ class WhisperAudioTranscriber:
         new_caption += " ".join(right_part)
 
         return new_caption
-
-
-if __name__ == "__main__":
-    transcriber = WhisperAudioTranscriber(
-        audio_path=sys.argv[1],
-        language="sv",
-        model_name="KBLab/kb-whisper-large",
-    )
-
-    result = transcriber.transcribe()
-
-    print(transcriber.subtitles())
