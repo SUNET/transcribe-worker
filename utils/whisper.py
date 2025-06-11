@@ -1,4 +1,3 @@
-import sys
 import torch
 
 from pyannote.audio import Pipeline
@@ -16,6 +15,11 @@ class WhisperAudioTranscriber:
         language: Optional[str] = "sv",
         hf_token: Optional[str] = None,
     ):
+        """
+        Initializes the WhisperAudioTranscriber with the audio
+        file path, model name,
+        """
+
         self.__audio_path = audio_path
         self.__model_name = model_name
         self.__hf_token = hf_token
@@ -26,7 +30,7 @@ class WhisperAudioTranscriber:
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             self.__model_name,
             torch_dtype=self.__torch_dtype,
-            low_cpu_mem_usage=True,
+            low_cpu_mem_usage=False,
             use_safetensors=True,
         )
         self.model.to(self.__device)
@@ -54,6 +58,9 @@ class WhisperAudioTranscriber:
         self.diarization_pipeline.to(torch.device(self.__device))
 
     def transcribe(self) -> list:
+        """
+        Transcribe the audio file using the Whisper model.
+        """
         self.__result = self.pipe(
             self.__audio_path,
             chunk_length_s=30,
@@ -63,6 +70,9 @@ class WhisperAudioTranscriber:
         return self.__result
 
     def diarization(self) -> dict:
+        """
+        Perform speaker diarization on the transcribed audio.
+        """
         if not self.diarization_pipeline:
             raise Exception(
                 "Diarization pipeline not initialized. Please provide a HuggingFace token."
@@ -90,6 +100,9 @@ class WhisperAudioTranscriber:
             return None
 
     def subtitles(self) -> str:
+        """
+        Generate subtitles from the transcription result.
+        """
         if not self.__result or "chunks" not in self.__result:
             raise Exception(
                 "Transcription result is not available or does not contain chunks."
@@ -113,6 +126,9 @@ class WhisperAudioTranscriber:
         return subtitles
 
     def __get_device(self, torch: torch):
+        """
+        Determine the device to use for model inference.
+        """
         if torch.cuda.is_available():
             return "cuda:0", torch.float16
         elif torch.backends.mps.is_available():
@@ -121,6 +137,9 @@ class WhisperAudioTranscriber:
             return "cpu", torch.float32
 
     def __align_speakers(self, transcription_chunks, diarization):
+        """
+        Align transcription chunks with speaker diarization results.
+        """
         aligned_segments = []
 
         for chunk in transcription_chunks:
@@ -148,6 +167,9 @@ class WhisperAudioTranscriber:
         return aligned_segments
 
     def __get_speaker(self, diarization, time_point):
+        """
+        Get the speaker label for a specific time point in the diarization.
+        """
         for segment, _, speaker in diarization.itertracks(yield_label=True):
             if segment.start <= time_point <= segment.end:
                 return speaker
@@ -155,6 +177,9 @@ class WhisperAudioTranscriber:
         return "UNKNOWN"
 
     def __get_speakers_in_range(self, diarization, start_time, end_time):
+        """
+        Get a list of active speakers within a specific time range in the diarization.
+        """
         active_speakers = set()
 
         for segment, _, speaker in diarization.itertracks(yield_label=True):
@@ -164,12 +189,18 @@ class WhisperAudioTranscriber:
         return list(active_speakers)
 
     def __format_timestamp(self, seconds):
+        """
+        Format a timestamp in seconds to MM:SS format.
+        """
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
 
         return f"{minutes:02d}:{seconds:02d}"
 
     def __caption_split(self, caption):
+        """
+        Split a caption into two parts if it exceeds a certain length.
+        """
         if len(caption) < 42:
             return f" {caption}"
 
