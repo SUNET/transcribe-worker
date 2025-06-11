@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     API_DEBUG: bool = True
     API_BACKEND_URL: str = ""
-    API_FILE_STORAGE_DIR: str = ""
+    API_FILE_STORAGE_DIR: str = "/storage"
     API_VERSION: str = "v1"
     API_WORKERS: int = 2
 
