@@ -130,10 +130,13 @@ class WhisperAudioTranscriber:
         Determine the device to use for model inference.
         """
         if torch.cuda.is_available():
+            print("Using CUDA")
             return "cuda:0", torch.float16
         elif torch.backends.mps.is_available():
+            print("Using MPS")
             return "mps", torch.float16
         else:
+            print("Using CPU")
             return "cpu", torch.float32
 
     def __align_speakers(self, transcription_chunks, diarization):
