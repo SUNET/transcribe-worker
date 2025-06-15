@@ -95,10 +95,7 @@ class TranscriptionJob:
             self.__put_status(JobStatusEnum.FAILED, error="Transcoding failed")
             return False
 
-        if self.hf_whisper:
-            res = self.__transcribe_hf()
-        else:
-            res = self.__transcribe_file()
+        res = self.__transcribe()
 
         if not res:
             self.__put_status(JobStatusEnum.FAILED, error="Transcription failed")
@@ -117,38 +114,32 @@ class TranscriptionJob:
 
         return True
 
-    def __transcribe_hf(self) -> bool:
+    def __transcribe(self) -> bool:
         """
         Transcribe the audio file using Hugging Face Whisper.
         """
-        self.logger.info("Starting transcription with Hugging Face Whisper")
-        try:
-            transcriber = WhisperAudioTranscriber(
-                audio_path=str(
-                    Path(self.api_file_storage_dir) / f"{self.filename}.wav"
-                ),
-                model_name=self.model,
-                language=self.language,
-                hf_token=self.hf_token,
-            )
+        self.logger.info("Starting transcription")
+        transcriber = WhisperAudioTranscriber(
+            "hf" if self.hf_whisper else "cpp",
+            str(Path(self.api_file_storage_dir) / f"{self.filename}.wav"),
+            model_name=self.model,
+            language=self.language,
+            hf_token=self.hf_token,
+        )
 
-            transcriber.transcribe()
-            srt = transcriber.subtitles()
-            drz = transcriber.diarization()
+        transcriber.transcribe()
+        srt = transcriber.subtitles()
+        drz = transcriber.diarization()
 
-            with open(
-                Path(self.api_file_storage_dir) / f"{self.filename}.srt", "w"
-            ) as srt_file:
-                srt_file.write(srt)
+        with open(
+            Path(self.api_file_storage_dir) / f"{self.filename}.srt", "w"
+        ) as srt_file:
+            srt_file.write(srt)
 
-            with open(
-                Path(self.api_file_storage_dir) / f"{self.filename}.json", "w"
-            ) as json_file:
-                json_file.write(json.dumps(dict(drz)))
-
-        except Exception as e:
-            self.logger.error(f"Error during transcription: {e}")
-            return False
+        with open(
+            Path(self.api_file_storage_dir) / f"{self.filename}.json", "w"
+        ) as json_file:
+            json_file.write(json.dumps(dict(drz)))
 
         return True
 
@@ -239,37 +230,6 @@ class TranscriptionJob:
         except Exception as e:
             self.logger.error(f"Error during transcoding: {e}")
             return False
-
-        return True
-
-    def __transcribe_file(self) -> bool:
-        """
-        Transcribe the audio file using whisper.cpp, we expect the executable
-        to be in PATH.
-        """
-        command = [
-            "whisper.cpp",
-            "-l",
-            self.language,
-            "-osrt",
-            "-ojf",
-            "-otxt",
-            "-ovtt",
-            "-of",
-            str(Path(self.api_file_storage_dir) / self.filename),
-            "-m",
-            self.model,
-            "-f",
-            str(Path(self.api_file_storage_dir) / f"{self.filename}.wav"),
-        ]
-
-        try:
-            self.__run_cmd(command)
-        except Exception as e:
-            self.logger.error(f"Error during transcription: {e}")
-            return False
-        else:
-            self.logger.info(f"Transcription completed: {self.filename}")
 
         return True
 

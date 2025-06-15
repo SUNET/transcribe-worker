@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     OIDC_TOKEN: str = ""
 
     # HF Whisper configuration.
-    HF_WHISPER: bool = True
+    HF_WHISPER: bool = False
     HF_TOKEN: str = ""
 
 

@@ -1,19 +1,29 @@
+import os
+import json
+import uuid
 import torch
+import subprocess
 
 from pyannote.audio import Pipeline
 from transformers import AutoModelForSpeechSeq2Seq
 from transformers import AutoProcessor
 from transformers import pipeline
 from typing import Optional
+from pathlib import Path
+from utils.settings import get_settings
+
+settings = get_settings()
 
 
 class WhisperAudioTranscriber:
     def __init__(
         self,
+        backend: str,
         audio_path: str,
         model_name: Optional[str] = "KBLab/kb-whisper-base",
         language: Optional[str] = "sv",
         hf_token: Optional[str] = None,
+        whisper_cpp_path: Optional[str] = "whisper.cpp",
     ):
         """
         Initializes the WhisperAudioTranscriber with the audio
@@ -26,12 +36,18 @@ class WhisperAudioTranscriber:
         self.__device, self.__torch_dtype = self.__get_device(torch)
         self.__language = language
         self.__result = None
+        self.__whisper_cpp_path = whisper_cpp_path
+        self.__backend = backend
 
+        if backend == "hf":
+            self.__hf_init()
+
+    def __hf_init(self):
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             self.__model_name,
             torch_dtype=self.__torch_dtype,
-            low_cpu_mem_usage=False,
             use_safetensors=True,
+            cache_dir="cache",
         )
         self.model.to(self.__device)
         self.processor = AutoProcessor.from_pretrained(self.__model_name)
@@ -43,29 +59,156 @@ class WhisperAudioTranscriber:
             torch_dtype=self.__torch_dtype,
             device=self.__device,
             return_timestamps=True,
-            generate_kwargs={
-                "max_new_tokens": 400,
-                "language": self.__language,
-                "task": "transcribe",
-            },
-            chunk_length_s=30,
-            language=self.__language,
         )
+
+    def __diarization_init(self):
+        """
+        Initializes the diarization pipeline using HuggingFace's PyAnnote.
+        """
 
         self.diarization_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1", use_auth_token=self.__hf_token
         )
         self.diarization_pipeline.to(torch.device(self.__device))
 
-    def transcribe(self) -> list:
+    def __transcribe_hf(self, filepath: str) -> list:
         """
         Transcribe the audio file using the Whisper model.
         """
         self.__result = self.pipe(
-            self.__audio_path,
-            chunk_length_s=30,
+            filepath,
             generate_kwargs={"task": "transcribe", "language": self.__language},
         )
+
+        return self.__result
+
+    def __run_cmd(self, command: list) -> bool:
+        """
+        Run a command using subprocess.run.
+        Raises an exception if the command fails.
+        """
+        try:
+            command_str = " ".join(command)
+            print(f"Running command: {command_str}")
+            result = subprocess.run(command, capture_output=True)
+
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    returncode=result.returncode,
+                    cmd=command_str,
+                    output=result.stdout.decode(),
+                    stderr=result.stderr.decode(),
+                )
+        except Exception:
+            return None
+
+        return True
+
+    def __parse_timestamp(self, timestamp_str):
+        # Split by comma to separate seconds and milliseconds
+        time_part, ms_part = timestamp_str.split(",")
+
+        # Split time part into hours, minutes, seconds
+        hours, minutes, seconds = map(int, time_part.split(":"))
+
+        # Convert to total seconds
+        total_seconds = hours * 3600 + minutes * 60 + seconds + int(ms_part) / 1000.0
+
+        return total_seconds
+
+    def __transcribe_cpp(self, filepath: str):
+        """
+        Transcribe the audio file using whisper.cpp, we expect the executable
+        to be in PATH.
+        """
+        temp_filename = str(uuid.uuid4())
+        command = [
+            self.__whisper_cpp_path,
+            "-l",
+            self.__language,
+            "-ojf",
+            "-of",
+            settings.API_FILE_STORAGE_DIR + "/" + temp_filename,
+            "-m",
+            self.__model_name,
+            "-f",
+            filepath,
+        ]
+
+        if not self.__run_cmd(command):
+            raise Exception(f"Failed to run whisper.cpp command: {' '.join(command)}")
+
+        with open(
+            str(Path(settings.API_FILE_STORAGE_DIR) / f"{temp_filename}.json"), "rb"
+        ) as f:
+            json_str = f.read()
+            json_str = json_str.decode("latin-1")
+            result = json.loads(json_str)
+
+        full_transcription = ""
+        segments = []
+        chunks = []
+
+        for item in result.get("transcription", []):
+            # Add text to full transcription
+            text = item.get("text", "").strip()
+            if full_transcription and not full_transcription.endswith(" "):
+                full_transcription += " "
+            full_transcription += text
+
+            # Convert timestamps from "HH:MM:SS,mmm" format to seconds
+            start_time = self.__parse_timestamp(item["timestamps"]["from"])
+            end_time = self.__parse_timestamp(item["timestamps"]["to"])
+            duration = end_time - start_time
+
+            # Create segment in new format
+            segment = {
+                "start": start_time,
+                "end": end_time,
+                "text": text,
+                "speaker": "SPEAKER_01",  # Default speaker - could be enhanced with speaker detection
+                "active_speakers": ["SPEAKER_01"],
+                "duration": duration,
+            }
+
+            chunk = {
+                "timestamp": (start_time, end_time),
+                "text": text,
+            }
+
+            segments.append(segment)
+            chunks.append(chunk)
+
+        # Create the converted format
+        converted = {
+            "full_transcription": full_transcription,
+            "segments": segments,
+            "chunks": chunks,
+            "speaker_count": 1,  # Default to 1 - could be enhanced with actual speaker detection
+        }
+
+        print(f"Transcription result: {json.dumps(converted, indent=2)}")
+
+        self.__result = converted
+
+        return converted
+
+    def transcribe(self) -> dict:
+        """
+        Transcribe the audio file and return the transcription result.
+        """
+        if not os.path.exists(self.__audio_path):
+            raise FileNotFoundError(f"Audio file {self.__audio_path} does not exist.")
+
+        if self.__backend == "hf":
+            self.__transcribe_hf(self.__audio_path)
+        elif self.__backend == "cpp":
+            self.__transcribe_cpp(self.__audio_path)
+        else:
+            raise ValueError(f"Unsupported backend: {self.__backend}")
+
+        if not self.__result:
+            raise Exception("Transcription result is not available.")
 
         return self.__result
 
@@ -73,6 +216,8 @@ class WhisperAudioTranscriber:
         """
         Perform speaker diarization on the transcribed audio.
         """
+        self.__diarization_init()
+
         if not self.diarization_pipeline:
             raise Exception(
                 "Diarization pipeline not initialized. Please provide a HuggingFace token."
@@ -90,7 +235,7 @@ class WhisperAudioTranscriber:
             )
 
             return {
-                "full_transcription": self.__result["text"],
+                "full_transcription": self.__result["full_transcription"],
                 "segments": aligned_segments,
                 "speaker_count": len(list(diarization.labels())),
             }
@@ -130,13 +275,10 @@ class WhisperAudioTranscriber:
         Determine the device to use for model inference.
         """
         if torch.cuda.is_available():
-            print("Using CUDA")
             return "cuda:0", torch.float16
         elif torch.backends.mps.is_available():
-            print("Using MPS")
             return "mps", torch.float16
         else:
-            print("Using CPU")
             return "cpu", torch.float32
 
     def __align_speakers(self, transcription_chunks, diarization):
