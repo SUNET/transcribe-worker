@@ -85,27 +85,38 @@ class TranscriptionJob:
         self.logger.info(f"  Model type: {self.model_type}")
         self.logger.info(f"  Filename: {self.filename}")
 
+        self.logger.debug("Updating job status to IN_PROGRESS")
         self.__put_status(JobStatusEnum.IN_PROGRESS, error=None)
 
+        self.logger.debug("Fetching file from API broker")
         if not self.__get_file():
+            self.logger.error("File download failed")
             self.__put_status(JobStatusEnum.FAILED, error="File download failed")
             return False
 
+        self.logger.debug("Transcoding file")
         if not self.__transcode_file():
+            self.logger.error("Transcoding failed")
             self.__put_status(JobStatusEnum.FAILED, error="Transcoding failed")
             return False
 
+        self.logger.debug("Transcribing file")
         res = self.__transcribe()
 
         if not res:
+            self.logger.error("Transcription failed")
             self.__put_status(JobStatusEnum.FAILED, error="Transcription failed")
             return False
 
+        self.logger.debug("Downscaling file")
         if not self.__downscale_file():
+            self.logger.error("Downscaling failed")
             self.__put_status(JobStatusEnum.FAILED, error="Downscaling failed")
             return False
 
+        self.logger.debug("Uploading results to backend")
         if not self.__put_file():
+            self.logger.error("File upload failed")
             self.__put_status(JobStatusEnum.FAILED, error="File upload failed")
             return False
 
@@ -120,6 +131,7 @@ class TranscriptionJob:
         """
         self.logger.info("Starting transcription")
         transcriber = WhisperAudioTranscriber(
+            self.logger,
             "hf" if self.hf_whisper else "cpp",
             str(Path(self.api_file_storage_dir) / f"{self.filename}.wav"),
             model_name=self.model,

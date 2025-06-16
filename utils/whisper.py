@@ -1,15 +1,16 @@
-import os
 import json
-import uuid
-import torch
+import logging
+import os
 import subprocess
+import torch
+import uuid
 
+from pathlib import Path
 from pyannote.audio import Pipeline
 from transformers import AutoModelForSpeechSeq2Seq
 from transformers import AutoProcessor
 from transformers import pipeline
 from typing import Optional
-from pathlib import Path
 from utils.settings import get_settings
 
 settings = get_settings()
@@ -18,6 +19,7 @@ settings = get_settings()
 class WhisperAudioTranscriber:
     def __init__(
         self,
+        logger: logging.Logger,
         backend: str,
         audio_path: str,
         model_name: Optional[str] = "KBLab/kb-whisper-base",
@@ -38,6 +40,7 @@ class WhisperAudioTranscriber:
         self.__result = None
         self.__whisper_cpp_path = whisper_cpp_path
         self.__backend = backend
+        self.__logger = logger
 
         if backend == "hf":
             self.__hf_init()
@@ -89,7 +92,7 @@ class WhisperAudioTranscriber:
         """
         try:
             command_str = " ".join(command)
-            print(f"Running command: {command_str}")
+            self.__logger.debug(f"Running command: {command_str}")
             result = subprocess.run(command, capture_output=True)
 
             if result.returncode != 0:
@@ -99,7 +102,8 @@ class WhisperAudioTranscriber:
                     output=result.stdout.decode(),
                     stderr=result.stderr.decode(),
                 )
-        except Exception:
+        except Exception as e:
+            self.__logger.error(f"Error running command: {e}")
             return None
 
         return True
@@ -135,28 +139,34 @@ class WhisperAudioTranscriber:
             filepath,
         ]
 
+        self.__logger.debug("Running command:", " ".join(command))
+
         if not self.__run_cmd(command):
-            raise Exception(f"Failed to run whisper.cpp command: {' '.join(command)}")
+            raise Exception("Failed to run whisper.cpp command")
 
         with open(
             str(Path(settings.API_FILE_STORAGE_DIR) / f"{temp_filename}.json"), "rb"
         ) as f:
             json_str = f.read()
-            json_str = json_str.decode("latin-1")
-            result = json.loads(json_str)
+
+        result = json.loads(json_str.decode("iso-8859-1"))
 
         full_transcription = ""
         segments = []
         chunks = []
 
         for item in result.get("transcription", []):
-            # Add text to full transcription
+            # Fix common encoding issues
             text = item.get("text", "").strip()
+            text = text.replace("Ã¶", "ö")
+            text = text.replace("Ã¤", "ä")
+            text = text.replace("Ã¥", "å")
+            text = text.replace("Ã©", "é")
+
             if full_transcription and not full_transcription.endswith(" "):
                 full_transcription += " "
-            full_transcription += text
 
-            # Convert timestamps from "HH:MM:SS,mmm" format to seconds
+            full_transcription += text
             start_time = self.__parse_timestamp(item["timestamps"]["from"])
             end_time = self.__parse_timestamp(item["timestamps"]["to"])
             duration = end_time - start_time
@@ -166,8 +176,6 @@ class WhisperAudioTranscriber:
                 "start": start_time,
                 "end": end_time,
                 "text": text,
-                "speaker": "SPEAKER_01",  # Default speaker - could be enhanced with speaker detection
-                "active_speakers": ["SPEAKER_01"],
                 "duration": duration,
             }
 
@@ -186,8 +194,6 @@ class WhisperAudioTranscriber:
             "chunks": chunks,
             "speaker_count": 1,  # Default to 1 - could be enhanced with actual speaker detection
         }
-
-        print(f"Transcription result: {json.dumps(converted, indent=2)}")
 
         self.__result = converted
 
@@ -241,7 +247,9 @@ class WhisperAudioTranscriber:
             }
 
         except Exception as e:
-            print(f"Error during transcription with diarization: {str(e)}")
+            self.__logger.error(
+                f"Error during transcription with diarization: {str(e)}"
+            )
             return None
 
     def subtitles(self) -> str:
