@@ -139,8 +139,6 @@ class WhisperAudioTranscriber:
             filepath,
         ]
 
-        self.__logger.debug("Running command:", " ".join(command))
-
         if not self.__run_cmd(command):
             raise Exception("Failed to run whisper.cpp command")
 

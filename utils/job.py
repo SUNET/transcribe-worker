@@ -86,18 +86,28 @@ class TranscriptionJob:
         self.logger.info(f"  Filename: {self.filename}")
 
         self.logger.debug("Updating job status to IN_PROGRESS")
-        self.__put_status(JobStatusEnum.IN_PROGRESS, error=None)
+        self.__put_status(
+            JobStatusEnum.IN_PROGRESS, error=None, transcribed_seconds=None
+        )
 
         self.logger.debug("Fetching file from API broker")
         if not self.__get_file():
             self.logger.error("File download failed")
-            self.__put_status(JobStatusEnum.FAILED, error="File download failed")
+            self.__put_status(
+                JobStatusEnum.FAILED,
+                error="File download failed",
+                transcribed_seconds=None,
+            )
             return False
 
         self.logger.debug("Transcoding file")
         if not self.__transcode_file():
             self.logger.error("Transcoding failed")
-            self.__put_status(JobStatusEnum.FAILED, error="Transcoding failed")
+            self.__put_status(
+                JobStatusEnum.FAILED,
+                error="Transcoding failed",
+                transcribed_seconds=None,
+            )
             return False
 
         self.logger.debug("Transcribing file")
@@ -105,23 +115,38 @@ class TranscriptionJob:
 
         if not res:
             self.logger.error("Transcription failed")
-            self.__put_status(JobStatusEnum.FAILED, error="Transcription failed")
+            self.__put_status(
+                JobStatusEnum.FAILED,
+                error="Transcription failed",
+                transcribed_seconds=None,
+            )
             return False
 
         self.logger.debug("Downscaling file")
         if not self.__downscale_file():
             self.logger.error("Downscaling failed")
-            self.__put_status(JobStatusEnum.FAILED, error="Downscaling failed")
+            self.__put_status(
+                JobStatusEnum.FAILED,
+                error="Downscaling failed",
+                transcribed_seconds=None,
+            )
             return False
 
         self.logger.debug("Uploading results to backend")
-        if not self.__put_file():
+        transcribed_seconds = self.__put_result()
+        if not transcribed_seconds:
             self.logger.error("File upload failed")
-            self.__put_status(JobStatusEnum.FAILED, error="File upload failed")
+            self.__put_status(
+                JobStatusEnum.FAILED,
+                error="File upload failed",
+                transcribed_seconds=None,
+            )
             return False
 
         self.logger.info(f"Job {self.uuid} completed successfully")
-        self.__put_status(JobStatusEnum.COMPLETED, error=None)
+        self.__put_status(
+            JobStatusEnum.COMPLETED, error=None, transcribed_seconds=transcribed_seconds
+        )
 
         return True
 
@@ -292,7 +317,9 @@ class TranscriptionJob:
 
         return True
 
-    def __put_status(self, status: JobStatusEnum, error: str) -> bool:
+    def __put_status(
+        self, status: JobStatusEnum, error: str, transcribed_seconds: int
+    ) -> bool:
         """
         Update the job status in the API broker.
         """
@@ -301,7 +328,11 @@ class TranscriptionJob:
         try:
             response = requests.put(
                 f"{self.api_url}/{self.uuid}",
-                json={"status": status, "error": error},
+                json={
+                    "status": status,
+                    "error": error,
+                    "transcribed_seconds": transcribed_seconds,
+                },
                 headers=header,
             )
             response.raise_for_status()
@@ -311,38 +342,77 @@ class TranscriptionJob:
 
         return True
 
-    def __put_file(self) -> bool:
+    def __upload_mp4(self, file_path) -> bool:
+        """
+        Upload the MP4 file to the API broker.
+        """
+
+        header = {
+            "Authorization": f"Bearer {self.api_token}",
+        }
+
+        try:
+            response = requests.put(
+                f"{self.api_url}/{self.user_id}/{self.uuid}/file",
+                headers=header,
+                files={"file": open(file_path, "rb")},
+            )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            self.logger.error(f"Error uploading MP4 file: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error uploading MP4 file: {e}")
+            return False
+
+    def __put_result(self) -> int:
         """
         Upload the file to the API broker.
         """
-        header = {"Authorization": f"Bearer {self.api_token}"}
+        header = {
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json",
+        }
 
-        try:
-            for output_format in ["srt", "vtt", "json", "txt", "mp4"]:
+        for output_format in ["srt", "vtt", "json", "txt", "mp4"]:
+            try:
                 file_path = (
                     Path(self.api_file_storage_dir) / f"{self.uuid}.{output_format}"
                 )
 
                 if not file_path.exists():
-                    self.logger.debug(
-                        f"File {file_path} does not exist, not uploading."
-                    )
+                    continue
+
+                if output_format == "mp4":
+                    self.__upload_mp4(file_path)
                     continue
 
                 with open(file_path, "rb") as fd:
+                    data = fd.read()
+                    json_data = {}
+
+                    if output_format == "json":
+                        json_data["result"] = json.loads(data.decode("utf-8"))
+                        transcribed_seconds = int(
+                            json_data["result"]["segments"][-1]["end"]
+                        )
+                    elif output_format == "srt":
+                        json_data["result"] = data.decode("utf-8")
+
+                    json_data["format"] = output_format
                     response = requests.put(
                         f"{self.api_url}/{self.user_id}/{self.uuid}/result",
-                        files={"file": fd},
+                        json=json_data,
                         headers=header,
                     )
                     response.raise_for_status()
+            except requests.RequestException as e:
+                self.logger.error(f"Error uploading {output_format} file: {e}")
+                return None
 
-                self.logger.info(f"Uploaded {output_format} file for job {self.uuid}")
-        except Exception as e:
-            self.logger.error(f"Error uploading file: {e}")
-            return False
+            self.logger.info(f"Uploaded {output_format} file for job {self.uuid}")
 
-        return True
+        return transcribed_seconds
 
     def __get_model(self) -> str:
         """
