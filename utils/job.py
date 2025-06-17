@@ -49,6 +49,7 @@ class TranscriptionJob:
         self.model_type = None
         self.model = None
         self.filename = None
+        self.speakers = 0
 
         # Ensure the file storage directory exists
         Path(self.api_file_storage_dir).mkdir(parents=True, exist_ok=True)
@@ -75,6 +76,7 @@ class TranscriptionJob:
         self.language = job.get("language")
         self.model_type = job.get("model_type")
         self.model = self.__get_model()
+        self.speakers = job.get("speakers", 0)
         self.filename = self.uuid
 
         self.logger.info(f"Starting transcription job {self.uuid}")
@@ -84,6 +86,7 @@ class TranscriptionJob:
         self.logger.info(f"  Model: {self.model}")
         self.logger.info(f"  Model type: {self.model_type}")
         self.logger.info(f"  Filename: {self.filename}")
+        self.logger.info(f"  Speakers: {self.speakers}")
 
         self.logger.debug("Updating job status to IN_PROGRESS")
         self.__put_status(
@@ -161,6 +164,7 @@ class TranscriptionJob:
             str(Path(self.api_file_storage_dir) / f"{self.filename}.wav"),
             model_name=self.model,
             language=self.language,
+            speakers=self.speakers,
             hf_token=self.hf_token,
         )
 

@@ -25,6 +25,7 @@ class WhisperAudioTranscriber:
         audio_path: str,
         model_name: Optional[str] = "KBLab/kb-whisper-base",
         language: Optional[str] = "sv",
+        speakers: Optional[int] = 0,
         hf_token: Optional[str] = None,
         whisper_cpp_path: Optional[str] = "whisper.cpp",
     ):
@@ -42,6 +43,7 @@ class WhisperAudioTranscriber:
         self.__whisper_cpp_path = whisper_cpp_path
         self.__backend = backend
         self.__logger = logger
+        self.__speakers = speakers
 
         if backend == "hf":
             self.__hf_init()
@@ -118,6 +120,8 @@ class WhisperAudioTranscriber:
 
         # Convert to total seconds
         total_seconds = hours * 3600 + minutes * 60 + seconds + int(ms_part) / 1000.0
+
+        print(total_seconds)
 
         return total_seconds
 
@@ -234,7 +238,9 @@ class WhisperAudioTranscriber:
             )
 
         try:
-            diarization = self.diarization_pipeline(self.__audio_path)
+            diarization = self.diarization_pipeline(
+                self.__audio_path, num_speakers=int(self.__speakers)
+            )
             aligned_segments = self.__align_speakers(
                 self.__result["chunks"], diarization
             )
