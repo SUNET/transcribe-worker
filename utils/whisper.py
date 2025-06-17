@@ -4,6 +4,7 @@ import os
 import subprocess
 import torch
 import uuid
+import pysubs2
 
 from pathlib import Path
 from pyannote.audio import Pipeline
@@ -259,22 +260,9 @@ class WhisperAudioTranscriber:
                 "Transcription result is not available or does not contain chunks."
             )
 
-        index = 0
-        subtitles = ""
-        for chunk in self.__result["chunks"]:
-            start, end = chunk["timestamp"]
-            text = chunk["text"].strip()
-            if not text:
-                continue
+        subtitles = pysubs2.load_from_whisper(self.__result)
 
-            caption = self.__caption_split(text)
-            subtitles += f"{index + 1}\n"
-            subtitles += f" {self.__format_timestamp(start)} --> {self.__format_timestamp(end)}\n"
-            subtitles += f"{caption}\n\n"
-
-            index += 1
-
-        return subtitles
+        return subtitles.to_string("srt")
 
     def __get_device(self, torch: torch):
         """
@@ -338,34 +326,3 @@ class WhisperAudioTranscriber:
                 active_speakers.add(speaker)
 
         return list(active_speakers)
-
-    def __format_timestamp(self, seconds):
-        """
-        Format a timestamp in seconds to MM:SS format.
-        """
-        hours = int(seconds // 3600)
-        minutes = int(seconds // 60)
-        seconds = int(seconds % 60)
-
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-    def __caption_split(self, caption):
-        """
-        Split a caption into two parts if it exceeds a certain length.
-        """
-        if len(caption) < 42:
-            return f" {caption}"
-
-        words_list = caption.split()
-        words_len = len(words_list)
-        word_mid = words_len // 2
-
-        left_part = words_list[:word_mid]
-        right_part = words_list[word_mid:]
-
-        new_caption = " "
-        new_caption += " ".join(left_part) + "\n"
-        new_caption += " "
-        new_caption += " ".join(right_part)
-
-        return new_caption
