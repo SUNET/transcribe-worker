@@ -62,6 +62,13 @@ class Settings(BaseSettings):
             "medium": "whisper_medium.bin",
             "large": "whisper_large.bin",
         },
+        "Norwegian": {
+            "tiny": "whisper_tiny.bin",
+            "base": "whisper_base.bin",
+            "small": "whisper_small.bin",
+            "medium": "whisper_medium.bin",
+            "large": "whisper_large.bin",
+        },
     }
 
     WHISPER_MODELS_HF: ClassVar[dict[str, dict[str, str]]] = {
