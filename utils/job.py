@@ -381,6 +381,7 @@ class TranscriptionJob:
             "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json",
         }
+        transcribed_seconds = 0
 
         for output_format in ["srt", "vtt", "json", "txt", "mp4"]:
             try:
