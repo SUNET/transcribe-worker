@@ -160,12 +160,8 @@ class WhisperAudioTranscriber:
         chunks = []
 
         for item in result.get("transcription", []):
-            # Fix common encoding issues
             text = item.get("text", "").strip()
-            text = text.replace("Ã¶", "ö")
-            text = text.replace("Ã¤", "ä")
-            text = text.replace("Ã¥", "å")
-            text = text.replace("Ã©", "é")
+            text = bytes(text, "iso-8859-1").decode("utf-8")
 
             if full_transcription and not full_transcription.endswith(" "):
                 full_transcription += " "
