@@ -121,8 +121,6 @@ class WhisperAudioTranscriber:
         # Convert to total seconds
         total_seconds = hours * 3600 + minutes * 60 + seconds + int(ms_part) / 1000.0
 
-        print(total_seconds)
-
         return total_seconds
 
     def __transcribe_cpp(self, filepath: str):
@@ -248,9 +246,8 @@ class WhisperAudioTranscriber:
             return {
                 "full_transcription": self.__result["full_transcription"],
                 "segments": aligned_segments,
-                "speaker_count": len(list(diarization.labels())),
+                "speaker_count": len(list(diarization.labels())) if diarization else 0,
             }
-
         except Exception as e:
             self.__logger.error(
                 f"Error during transcription with diarization: {str(e)}"
