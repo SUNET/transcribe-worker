@@ -41,6 +41,7 @@ class TranscriptionJob:
         self.api_file_storage_dir = api_file_storage_dir
         self.hf_whisper = hf_whisper
         self.hf_token = hf_token
+        self.speakers = 0
 
     def __enter__(self) -> "TranscriptionJob":
         """
@@ -81,6 +82,9 @@ class TranscriptionJob:
         self.model = self.__get_model()
         self.speakers = job.get("speakers", 0)
         self.filename = self.uuid
+
+        if not self.speakers:
+            self.speakers = 0
 
         self.logger.info(f"Starting transcription job {self.uuid}")
         self.logger.info(f"  HF: {self.hf_whisper}")

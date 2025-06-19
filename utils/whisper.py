@@ -115,6 +115,9 @@ class WhisperAudioTranscriber:
         # Split by comma to separate seconds and milliseconds
         time_part, ms_part = timestamp_str.split(",")
 
+        if not ms_part:
+            ms_part = "0"
+
         # Split time part into hours, minutes, seconds
         hours, minutes, seconds = map(int, time_part.split(":"))
 
