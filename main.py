@@ -16,10 +16,7 @@ def main(worker_id: int):
     Main function to fetch jobs and process them.
     """
 
-    api_broker_url = settings.API_BACKEND_URL
-    api_file_storage_dir = settings.API_FILE_STORAGE_DIR
-    api_version = settings.API_VERSION
-    api_url = f"{api_broker_url}/api/{api_version}/job"
+    api_url = f"{settings.API_BACKEND_URL}/api/{settings.API_VERSION}/job"
     api_token = settings.OIDC_TOKEN
 
     logger.info(f"[{worker_id}] Starting transcription service, server URL: {api_url}")
@@ -34,7 +31,7 @@ def main(worker_id: int):
             logger,
             api_url,
             api_token,
-            api_file_storage_dir,
+            settings.FILE_STORAGE_DIR,
             hf_whisper=settings.HF_WHISPER,
             hf_token=settings.HF_TOKEN,
         ) as job:
@@ -43,11 +40,11 @@ def main(worker_id: int):
 
 if __name__ == "__main__":
     try:
-        if settings.API_DEBUG:
+        if settings.DEBUG:
             logger.setLevel(logging.DEBUG)
             logger.debug("Debug mode is enabled.")
 
-        workers = settings.API_WORKERS
+        workers = settings.WORKERS
 
         for i in range(workers):
             thread = threading.Thread(target=main, args=(i,))

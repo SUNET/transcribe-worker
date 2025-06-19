@@ -27,7 +27,7 @@ class WhisperAudioTranscriber:
         language: Optional[str] = "sv",
         speakers: Optional[int] = 0,
         hf_token: Optional[str] = None,
-        whisper_cpp_path: Optional[str] = "whisper.cpp",
+        whisper_cpp_path: Optional[str] = settings.WHISPER_CPP_PATH,
     ):
         """
         Initializes the WhisperAudioTranscriber with the audio
@@ -137,7 +137,7 @@ class WhisperAudioTranscriber:
             self.__language,
             "-ojf",
             "-of",
-            settings.API_FILE_STORAGE_DIR + "/" + temp_filename,
+            settings.FILE_STORAGE_DIR + "/" + temp_filename,
             "-m",
             self.__model_name,
             "-f",
@@ -148,7 +148,7 @@ class WhisperAudioTranscriber:
             raise Exception("Failed to run whisper.cpp command")
 
         with open(
-            str(Path(settings.API_FILE_STORAGE_DIR) / f"{temp_filename}.json"), "rb"
+            str(Path(settings.FILE_STORAGE_DIR) / f"{temp_filename}.json"), "rb"
         ) as f:
             json_str = f.read()
 

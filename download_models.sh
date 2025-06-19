@@ -4,12 +4,12 @@
 mkdir -p models
 
 # Download the KB models
-for i in tiny base large; do
+for i in tiny base small medium large; do
 	wget -q --show-progress -O models/sv_${i}.bin https://huggingface.co/KBLab/kb-whisper-${i}/resolve/main/ggml-model-q5_0.bin
 done
 
 # Download other models
-for i in tiny base; do
+for i in tiny base small medium; do
 	wget -q --show-progress -O models/whisper_${i}.bin https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-${i}-q5_1.bin
 done
 

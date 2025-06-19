@@ -7,6 +7,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 from utils.whisper import WhisperAudioTranscriber
+from utils import settings
+
+settings = settings.get_settings()
 
 
 class JobStatusEnum(str, Enum):
@@ -177,10 +180,11 @@ class TranscriptionJob:
         ) as srt_file:
             srt_file.write(srt)
 
-        with open(
-            Path(self.api_file_storage_dir) / f"{self.filename}.json", "w"
-        ) as json_file:
-            json_file.write(json.dumps(dict(drz)))
+        if drz:
+            with open(
+                Path(self.api_file_storage_dir) / f"{self.filename}.json", "w"
+            ) as json_file:
+                json_file.write(json.dumps(dict(drz)))
 
         return True
 
@@ -422,42 +426,15 @@ class TranscriptionJob:
         """
         Return the correct model file based on
         model type and language.
-
-        If langauge = sv then use kb-whisper else
-        use the default whisper model.
         """
 
-        if self.hf_whisper and self.language == "sv":
-            match self.model_type:
-                case "tiny":
-                    model = "KBLab/kb-whisper-tiny"
-                case "base":
-                    model = "KBLab/kb-whisper-base"
-                case "large":
-                    model = "KBLab/kb-whisper-large"
-        elif self.hf_whisper and self.language == "en":
-            match self.model_type:
-                case "tiny":
-                    model = "openai/whisper-tiny"
-                case "base":
-                    model = "openai/whisper-base"
-                case "large":
-                    model = "openai/whisper-large"
+        if self.hf_whisper:
+            model = settings.WHISPER_MODELS_HF[self.langauge][self.model_type.lower()]
         else:
-            model = "models/"
-            model += "sv" if self.language == "sv" else "en"
-
-            match self.model_type:
-                case "tiny":
-                    model += "_tiny"
-                case "base":
-                    model += "_base"
-                case "large":
-                    model += "_large"
-                case _:
-                    model += "_base"
-
-            model += ".bin"
+            model = (
+                "models/"
+                + settings.WHISPER_MODELS_CPP[self.language][self.model_type.lower()]
+            )
 
         return model
 
