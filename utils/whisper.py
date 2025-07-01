@@ -180,6 +180,7 @@ class WhisperAudioTranscriber:
 
             chunk = {
                 "timestamp": (start_time, end_time),
+                "timestamp_ms": (item["timestamps"]["from"], item["timestamps"]["to"]),
                 "text": text,
             }
 
@@ -264,14 +265,14 @@ class WhisperAudioTranscriber:
         index = 0
         subtitles = ""
         for chunk in self.__result["chunks"]:
-            start, end = chunk["timestamp"]
+            start, end = chunk["timestamp_ms"]
             text = chunk["text"].strip()
             if not text:
                 continue
 
             caption = self.__caption_split(text)
             subtitles += f"{index + 1}\n"
-            subtitles += f" {self.__format_timestamp(start)} --> {self.__format_timestamp(end)}\n"
+            subtitles += f" {start} --> {end}\n"
             subtitles += f"{caption}\n\n"
 
             index += 1
