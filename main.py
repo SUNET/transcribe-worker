@@ -6,7 +6,7 @@ import threading
 from daemonize import Daemonize
 from random import randint
 from time import sleep
-from utils.log import get_logger
+from utils.log import get_logger, get_fileno
 from utils.settings import get_settings
 from utils.args import parse_arguments
 
@@ -23,16 +23,13 @@ def mainloop(worker_id: int) -> None:
     Main function to fetch jobs and process them.
     """
 
+    logger.info(f"Worker thread {worker_id} started")
+
     api_url = f"{settings.API_BACKEND_URL}/api/{settings.API_VERSION}/job"
     api_token = settings.OIDC_TOKEN
 
-    logger.info(f"[{worker_id}] Starting transcription service, server URL: {api_url}")
-
     while True:
-        sleep_time = randint(10, 60)
-        logger.debug(f"[{worker_id}] Fetching next job in {sleep_time} seconds.")
-
-        sleep(sleep_time)
+        sleep(randint(10, 60))
 
         with TranscriptionJob(
             logger,
@@ -46,13 +43,9 @@ def mainloop(worker_id: int) -> None:
 
 
 def main() -> None:
-    if settings.DEBUG:
-        logger.setLevel(logging.DEBUG)
-        logger.debug("Debug mode is enabled.")
+    logger.info("Starting transcription service...")
 
-    workers = settings.WORKERS
-
-    for i in range(workers):
+    for i in range(settings.WORKERS):
         thread = threading.Thread(target=mainloop, args=(i,))
         thread.start()
 
@@ -101,5 +94,9 @@ if __name__ == "__main__":
             pid=pidfile,
             action=main,
             foreground=False,
+            verbose=True,
+            keep_fds=[get_fileno()],
+            auto_close_fds=False,
+            chdir=os.getcwd(),
         )
         daemon.start()

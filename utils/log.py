@@ -11,24 +11,32 @@ def get_logger():
     logger = logging.getLogger(__name__)
     _, _, _, _, debug, logfile = parse_arguments()
 
-    if not logger.handlers:
+    if not logger.hasHandlers():
         formatter = logging.Formatter(
             "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
         )
 
-        if logfile != "":
-            file_handler = logging.FileHandler(logfile)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+        if logfile:
+            handler = logging.FileHandler(logfile)
         else:
             handler = logging.StreamHandler()
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
+
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.propagate = False
 
     if debug is True:
         logger.setLevel(logging.DEBUG)
-        logger.debug("Debug mode is enabled.")
+        logger.debug("Log level: DEBUG")
     else:
         logger.setLevel(logging.INFO)
+        logger.info("Log level: INFO")
 
     return logger
+
+
+def get_fileno():
+    logger = get_logger()
+    handle = logger.handlers[0]
+
+    return handle.stream.fileno()
