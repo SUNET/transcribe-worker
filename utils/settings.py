@@ -2,6 +2,9 @@ import os
 from typing import ClassVar
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from utils.args import parse_arguments
+
+_, _, _, envfile, _, _ = parse_arguments()
 
 
 class Settings(BaseSettings):
@@ -10,7 +13,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=envfile,
         env_file_encoding="utf-8",
         case_sensitive=True,
         validate_assignment=True,

@@ -1,17 +1,24 @@
+import os
+import sys
 import logging
 import threading
 
+from daemonize import Daemonize
 from random import randint
 from time import sleep
-from utils.job import TranscriptionJob
 from utils.log import get_logger
 from utils.settings import get_settings
+from utils.args import parse_arguments
 
 settings = get_settings()
 logger = get_logger()
+foreground, pidfile, zap, _, _, _ = parse_arguments()
+
+if not zap:
+    from utils.job import TranscriptionJob
 
 
-def main(worker_id: int):
+def mainloop(worker_id: int) -> None:
     """
     Main function to fetch jobs and process them.
     """
@@ -38,17 +45,61 @@ def main(worker_id: int):
             job.start()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    if settings.DEBUG:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Debug mode is enabled.")
+
+    workers = settings.WORKERS
+
+    for i in range(workers):
+        thread = threading.Thread(target=mainloop, args=(i,))
+        thread.start()
+
+
+def daemon_kill() -> None:
     try:
-        if settings.DEBUG:
-            logger.setLevel(logging.DEBUG)
-            logger.debug("Debug mode is enabled.")
+        pid = int(open(pidfile, "r").read().strip())
+        print(f"Zapping transcription service with PID {pid}...")
+        os.kill(pid, 9)
+        os.remove(pidfile)
+    except FileNotFoundError:
+        print("PID file not found, nothing to zap.")
 
-        workers = settings.WORKERS
 
-        for i in range(workers):
-            thread = threading.Thread(target=main, args=(i,))
-            thread.start()
-    except KeyboardInterrupt:
-        print("")
-        logger.info("Transcription service stopped.")
+def daemon_running() -> None:
+    """
+    Check if the daemon is running by checking the PID file.
+    """
+    if not os.path.exists(pidfile):
+        return False
+
+    try:
+        with open(pidfile, "r") as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)
+    except FileNotFoundError:
+        return
+    except ProcessLookupError:
+        os.remove(pidfile)
+        return
+
+    print(f"Daemon is already running with PID {pid}.")
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    if zap:
+        daemon_kill()
+    elif foreground:
+        daemon_running()
+        main()
+    else:
+        daemon_running()
+        daemon = Daemonize(
+            app="transcription_service",
+            pid=pidfile,
+            action=main,
+            foreground=False,
+        )
+        daemon.start()
