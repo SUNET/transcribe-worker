@@ -27,10 +27,8 @@ def get_logger():
 
     if debug is True:
         logger.setLevel(logging.DEBUG)
-        logger.debug("Log level: DEBUG")
     else:
         logger.setLevel(logging.INFO)
-        logger.info("Log level: INFO")
 
     return logger
 
