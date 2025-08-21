@@ -160,7 +160,14 @@ class WhisperAudioTranscriber:
 
         for item in result.get("transcription", []):
             text = item.get("text", "").strip()
-            text = bytes(text, "iso-8859-1").decode("utf-8")
+
+            try:
+                text = bytes(text, "iso-8859-1").decode("utf-8")
+            except UnicodeDecodeError:
+                self.__logger.error(
+                    f"Failed to decode {text} from transcription, using ISO-8859-1 encoding."
+                )
+                continue
 
             if full_transcription and not full_transcription.endswith(" "):
                 full_transcription += " "
