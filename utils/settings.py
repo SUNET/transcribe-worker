@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     FILE_STORAGE_DIR: str = "/storage"
     API_BACKEND_URL: str = ""
     API_VERSION: str = "v1"
+    FFMPEG_PATH: str = "ffmpeg"
 
     # OIDC configuration.
     OIDC_TOKEN: str = ""

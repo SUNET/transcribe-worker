@@ -221,29 +221,42 @@ class TranscriptionJob:
 
         output_filename = f"{self.filename}.mp4"
         command = [
-            "ffmpeg",
+            settings.FFMPEG_PATH,
             "-i",
             str(Path(self.api_file_storage_dir) / self.filename),
             "-vf",
-            "scale=-2:320",
+            "scale=-2:360:flags=lanczos",
             "-c:v",
             "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "22",
             "-profile:v",
-            "baseline",
+            "high",
             "-level",
-            "3.0",
+            "3.1",
             "-pix_fmt",
             "yuv420p",
+            "-g",
+            "48",
+            "-keyint_min",
+            "48",
+            "-sc_threshold",
+            "0",
             "-c:a",
             "aac",
             "-b:a",
             "128k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
             "-movflags",
             "+faststart",
             str(Path(self.api_file_storage_dir) / output_filename),
             "-y",
         ]
-
         try:
             self.__run_cmd(command)
         except Exception as e:
@@ -260,7 +273,7 @@ class TranscriptionJob:
 
         output_filename = f"{self.filename}.wav"
         command = [
-            "ffmpeg",
+            settings.FFMPEG_PATH,
             "-i",
             str(Path(self.api_file_storage_dir) / self.filename),
             "-ar",
