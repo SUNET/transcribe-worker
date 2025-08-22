@@ -456,10 +456,9 @@ class TranscriptionJob:
             file_path.unlink()
             self.logger.info(f"Deleted file {file_path}")
 
-        for ext in [".txt", ".vtt", ".json", "mp4"]:
-            file_path = Path(self.api_file_storage_dir) / f"{self.uuid}{ext}"
-            if file_path.exists():
-                file_path.unlink()
-                self.logger.info(f"Deleted file {file_path}")
+        for file in Path(self.api_file_storage_dir).glob(f"{self.uuid}.*"):
+            if file.exists():
+                file.unlink()
+                self.logger.info(f"Deleted file {file}")
 
         return True

@@ -152,6 +152,8 @@ class WhisperAudioTranscriber:
         ) as f:
             json_str = f.read()
 
+        os.remove(str(Path(settings.FILE_STORAGE_DIR) / f"{temp_filename}.json"))
+
         result = json.loads(json_str.decode("iso-8859-1"))
 
         full_transcription = ""
