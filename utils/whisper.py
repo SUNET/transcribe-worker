@@ -162,6 +162,7 @@ class WhisperAudioTranscriber:
 
         for item in result.get("transcription", []):
             text = item.get("text", "").strip()
+            scores = []
 
             try:
                 text = bytes(text, "iso-8859-1").decode("utf-8")
@@ -170,6 +171,10 @@ class WhisperAudioTranscriber:
                     f"Failed to decode {text} from transcription, using ISO-8859-1 encoding."
                 )
                 continue
+
+            # Calculate a score for the text from all tokens
+            for token in item.get("tokens", []):
+                scores.append(token.get("p", 0.0))
 
             if full_transcription and not full_transcription.endswith(" "):
                 full_transcription += " "
@@ -191,6 +196,7 @@ class WhisperAudioTranscriber:
                 "timestamp": (start_time, end_time),
                 "timestamp_ms": (item["timestamps"]["from"], item["timestamps"]["to"]),
                 "text": text,
+                "avg_score": sum(scores) / len(scores) if scores else 0.0,
             }
 
             segments.append(segment)
@@ -324,6 +330,7 @@ class WhisperAudioTranscriber:
                     "speaker": dominant_speaker,
                     "active_speakers": active_speakers,
                     "duration": chunk_end - chunk_start,
+                    "avg_score": chunk.get("avg_score", 0.0),
                 }
             )
 
