@@ -30,14 +30,12 @@ class TranscriptionJob:
         self,
         logger: logging.Logger,
         api_url: str,
-        api_token: str,
         api_file_storage_dir: str,
         hf_whisper: Optional[bool] = False,
         hf_token: Optional[str] = None,
     ):
         self.logger = logger
         self.api_url = api_url
-        self.api_token = api_token
         self.api_file_storage_dir = api_file_storage_dir
         self.hf_whisper = hf_whisper
         self.hf_token = hf_token
@@ -177,6 +175,9 @@ class TranscriptionJob:
 
         transcriber.transcribe()
         srt = transcriber.subtitles()
+
+        print(srt)
+
         drz = transcriber.diarization()
 
         with open(
@@ -299,10 +300,11 @@ class TranscriptionJob:
         """
         Get the next job from the API broker.
         """
-        header = {"Authorization": f"Bearer {self.api_token}"}
-
         try:
-            response = requests.get(f"{self.api_url}/next", headers=header)
+            response = requests.get(
+                f"{self.api_url}/next",
+                cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
+            )
             response.raise_for_status()
             job = response.json()["result"]
             if "status" in job and job["status"] != JobStatusEnum.IN_PROGRESS:
@@ -319,11 +321,11 @@ class TranscriptionJob:
         """
         Download the file from the API broker.
         """
-        header = {"Authorization": f"Bearer {self.api_token}"}
 
         try:
             response = requests.get(
-                f"{self.api_url}/{self.user_id}/{self.uuid}/file", headers=header
+                f"{self.api_url}/{self.user_id}/{self.uuid}/file",
+                cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
             )
             response.raise_for_status()
 
@@ -348,7 +350,6 @@ class TranscriptionJob:
         """
         Update the job status in the API broker.
         """
-        header = {"Authorization": f"Bearer {self.api_token}"}
 
         try:
             response = requests.put(
@@ -358,7 +359,7 @@ class TranscriptionJob:
                     "error": error,
                     "transcribed_seconds": transcribed_seconds,
                 },
-                headers=header,
+                cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
             )
             response.raise_for_status()
         except requests.RequestException as e:
@@ -372,15 +373,11 @@ class TranscriptionJob:
         Upload the MP4 file to the API broker.
         """
 
-        header = {
-            "Authorization": f"Bearer {self.api_token}",
-        }
-
         try:
             response = requests.put(
                 f"{self.api_url}/{self.user_id}/{self.uuid}/file",
-                headers=header,
                 files={"file": open(file_path, "rb")},
+                cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
             )
             response.raise_for_status()
         except requests.RequestException as e:
@@ -395,7 +392,6 @@ class TranscriptionJob:
         Upload the file to the API broker.
         """
         header = {
-            "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json",
         }
         transcribed_seconds = 0
@@ -430,6 +426,7 @@ class TranscriptionJob:
                         f"{self.api_url}/{self.user_id}/{self.uuid}/result",
                         json=json_data,
                         headers=header,
+                        cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
                     )
                     response.raise_for_status()
             except requests.RequestException as e:

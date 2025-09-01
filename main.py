@@ -25,7 +25,6 @@ def mainloop(worker_id: int) -> None:
     logger.info(f"Worker thread {worker_id} started")
 
     api_url = f"{settings.API_BACKEND_URL}/api/{settings.API_VERSION}/job"
-    api_token = settings.OIDC_TOKEN
 
     while True:
         sleep(randint(10, 60))
@@ -33,7 +32,6 @@ def mainloop(worker_id: int) -> None:
         with TranscriptionJob(
             logger,
             api_url,
-            api_token,
             settings.FILE_STORAGE_DIR,
             hf_whisper=settings.HF_WHISPER,
             hf_token=settings.HF_TOKEN,

@@ -26,12 +26,13 @@ class Settings(BaseSettings):
     API_VERSION: str = "v1"
     FFMPEG_PATH: str = "ffmpeg"
 
-    # OIDC configuration.
-    OIDC_TOKEN: str = ""
-
     # HF Whisper configuration.
     HF_WHISPER: bool = False
     HF_TOKEN: str = ""
+
+    # SSL configuration
+    SSL_CERTFILE: str = ""
+    SSL_KEYFILE: str = ""
 
     # whisper.cpp path
     WHISPER_CPP_PATH: str = "whisper-cli"
