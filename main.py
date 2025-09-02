@@ -1,6 +1,7 @@
 import os
 import sys
-import threading
+
+from concurrent.futures import ProcessPoolExecutor
 
 from daemonize import Daemonize
 from random import randint
@@ -15,6 +16,12 @@ foreground, pidfile, zap, _, _, _ = parse_arguments()
 
 if not zap:
     from utils.job import TranscriptionJob
+
+
+def run_pool():
+    with ProcessPoolExecutor() as pool:
+        for i in range(settings.WORKERS):
+            pool.submit(mainloop, i)
 
 
 def mainloop(worker_id: int) -> None:
@@ -42,9 +49,7 @@ def mainloop(worker_id: int) -> None:
 def main() -> None:
     logger.info("Starting transcription service...")
 
-    for i in range(settings.WORKERS):
-        thread = threading.Thread(target=mainloop, args=(i,))
-        thread.start()
+    run_pool()
 
 
 def daemon_kill() -> None:
