@@ -4,6 +4,7 @@ import os
 import subprocess
 import torch
 import uuid
+import mlx_whisper
 
 from pathlib import Path
 from pyannote.audio import Pipeline
@@ -44,8 +45,9 @@ class WhisperAudioTranscriber:
         self.__logger = logger
         self.__speakers = speakers
 
-        if backend == "hf":
-            self.__hf_init()
+        match backend:
+            case "hf":
+                self.__hf_init()
 
     def __hf_init(self):
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
@@ -75,6 +77,89 @@ class WhisperAudioTranscriber:
             "pyannote/speaker-diarization-3.1", use_auth_token=self.__hf_token
         )
         self.diarization_pipeline.to(torch.device(self.__device))
+
+    def __seconds_to_srt_time(self, seconds) -> str:
+        """
+        Convert seconds (float or string) to SRT timestamp format (HH:MM:SS,mmm).
+        """
+        seconds = float(seconds)  # ensure it's a float
+        millis = int(round((seconds % 1) * 1000))
+        total_seconds = int(seconds)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+
+    def __transcribe_mlx(self, filepath: str) -> list:
+        result = mlx_whisper.transcribe(
+            filepath,
+            path_or_hf_repo=self.__model_name,
+            task="transcribe",
+            language="sv",
+            temperature=0,
+            best_of=5,
+            patience=None,
+            length_penalty=None,
+            suppress_tokens="-1",
+            initial_prompt=None,
+            condition_on_previous_text=True,
+            fp16=True,
+            compression_ratio_threshold=2.4,
+            logprob_threshold=-1.0,
+            no_speech_threshold=0.6,
+            word_timestamps=False,
+            prepend_punctuations="\"'“¿([{-",
+            append_punctuations="\"'.。,，！?？:：”)]}、=",
+            hallucination_silence_threshold=None,
+            clip_timestamps="0",
+        )
+
+        full_transcription = ""
+        segments = []
+        chunks = []
+
+        for item in result.get("segments", []):
+            text = item.get("text", "").strip()
+
+            if full_transcription and not full_transcription.endswith(" "):
+                full_transcription += " "
+
+            full_transcription += text
+
+            start = self.__seconds_to_srt_time(str(item["start"]))
+            end = self.__seconds_to_srt_time(str(item["end"]))
+
+            start_time = self.__parse_timestamp(start)
+            end_time = self.__parse_timestamp(end)
+            duration = end_time - start_time
+
+            # Create segment in new format
+            segment = {
+                "start": start_time,
+                "end": end_time,
+                "text": text,
+                "duration": duration,
+            }
+
+            chunk = {
+                "timestamp": (start_time, end_time),
+                "timestamp_ms": (start, end),
+                "text": text,
+            }
+
+            segments.append(segment)
+            chunks.append(chunk)
+
+        # Create the converted format
+        converted = {
+            "full_transcription": full_transcription,
+            "segments": segments,
+            "chunks": chunks,
+            "speaker_count": 1,  # Default to 1 - could be enhanced with actual speaker detection
+        }
+
+        self.__result = converted
+
+        return converted
 
     def __transcribe_hf(self, filepath: str) -> list:
         """
@@ -112,6 +197,7 @@ class WhisperAudioTranscriber:
 
     def __parse_timestamp(self, timestamp_str):
         # Split by comma to separate seconds and milliseconds
+        timestamp_str = str(timestamp_str)
         time_part, ms_part = timestamp_str.split(",")
 
         if not ms_part:
@@ -219,6 +305,8 @@ class WhisperAudioTranscriber:
             self.__transcribe_hf(self.__audio_path)
         elif self.__backend == "cpp":
             self.__transcribe_cpp(self.__audio_path)
+        elif self.__backend == "mlx":
+            self.__transcribe_mlx(self.__audio_path)
         else:
             raise ValueError(f"Unsupported backend: {self.__backend}")
 
@@ -381,3 +469,16 @@ class WhisperAudioTranscriber:
         new_caption += " ".join(right_part)
 
         return new_caption
+
+
+if __name__ == "__main__":
+    w = WhisperAudioTranscriber(
+        logging.getLogger(),
+        backend="mlx",
+        audio_path="/Users/khn/Downloads/1_min_sample.wav",
+        model_name="mlx/sv_base",
+        language="sv",
+        speakers=2,
+    )
+
+    print(w.transcribe())

@@ -165,7 +165,7 @@ class TranscriptionJob:
         self.logger.info("Starting transcription")
         transcriber = WhisperAudioTranscriber(
             self.logger,
-            "hf" if self.hf_whisper else "cpp",
+            settings.WHISPER_BACKEND,
             str(Path(self.api_file_storage_dir) / f"{self.filename}.wav"),
             model_name=self.model,
             language=self.language,
@@ -175,9 +175,6 @@ class TranscriptionJob:
 
         transcriber.transcribe()
         srt = transcriber.subtitles()
-
-        print(srt)
-
         drz = transcriber.diarization()
 
         with open(
@@ -445,6 +442,8 @@ class TranscriptionJob:
 
         if self.hf_whisper:
             model = settings.WHISPER_MODELS_HF[self.langauge][self.model_type.lower()]
+        elif settings.WHISPER_BACKEND == "mlx":
+            model = settings.WHISPER_MODELS_MLX[self.language][self.model_type.lower()]
         else:
             model = (
                 "models/"

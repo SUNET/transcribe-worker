@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     API_BACKEND_URL: str = ""
     API_VERSION: str = "v1"
     FFMPEG_PATH: str = "ffmpeg"
+    WHISPER_BACKEND: str = "cpp"
 
     # HF Whisper configuration.
     HF_WHISPER: bool = False
@@ -111,6 +112,16 @@ class Settings(BaseSettings):
             "small": "openai/whisper-small",
             "medium": "openai/whisper-medium",
             "large": "openai/whisper-large-v2",
+        },
+    }
+
+    WHISPER_MODELS_MLX: ClassVar[dict[str, dict[str, str]]] = {
+        "Swedish": {
+            "tiny": "mlx/sv_tiny",
+            "base": "mlx/sv_base",
+            "small": "mlx/sv_small",
+            "medium": "mlx/sv_medium",
+            "large": "mlx/sv_large",
         },
     }
 
