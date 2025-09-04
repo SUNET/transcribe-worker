@@ -96,6 +96,17 @@ class WhisperAudioTranscriber:
         minutes, secs = divmod(remainder, 60)
         return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
+    def __transcribe_hf(self, filepath: str) -> list:
+        """
+        Transcribe the audio file using the Whisper model.
+        """
+        self.__result = self.pipe(
+            filepath,
+            generate_kwargs={"task": "transcribe", "language": self.__language},
+        )
+
+        return self.__result
+
     def __run_cmd(self, command: list) -> bool:
         """
         Run a command using subprocess.run.
