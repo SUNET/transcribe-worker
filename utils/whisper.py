@@ -71,9 +71,11 @@ class WhisperAudioTranscriber:
         Initializes the diarization pipeline using HuggingFace's PyAnnote.
         """
 
+        self.__logger.debug(f"Initializing diarization pipeline, using {self.__device}")
+
         self.diarization_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1", use_auth_token=self.__hf_token
-        )
+        ).to(torch.device(self.__device))
         self.diarization_pipeline.to(torch.device(self.__device))
 
     def __transcribe_hf(self, filepath: str) -> list:
