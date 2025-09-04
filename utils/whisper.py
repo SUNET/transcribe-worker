@@ -16,6 +16,22 @@ from utils.settings import get_settings
 settings = get_settings()
 
 
+def diarization_init(hf_token: str):
+    """
+    Initializes the diarization pipeline using HuggingFace's PyAnnote.
+    """
+    if torch.cuda.is_available():
+        device = "cuda:0"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+
+    return Pipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1", use_auth_token=hf_token
+    ).to(torch.device(device))
+
+
 class WhisperAudioTranscriber:
     def __init__(
         self,
@@ -27,6 +43,7 @@ class WhisperAudioTranscriber:
         speakers: Optional[int] = 0,
         hf_token: Optional[str] = None,
         whisper_cpp_path: Optional[str] = settings.WHISPER_CPP_PATH,
+        diarization_object: Optional[Pipeline] = None,
     ):
         """
         Initializes the WhisperAudioTranscriber with the audio
@@ -43,6 +60,7 @@ class WhisperAudioTranscriber:
         self.__backend = backend
         self.__logger = logger
         self.__speakers = speakers
+        self.__diarization_pipeline = diarization_object
 
         if backend == "hf":
             self.__hf_init()
@@ -65,18 +83,6 @@ class WhisperAudioTranscriber:
             device=self.__device,
             return_timestamps=True,
         )
-
-    def __diarization_init(self):
-        """
-        Initializes the diarization pipeline using HuggingFace's PyAnnote.
-        """
-
-        self.__logger.debug(f"Initializing diarization pipeline, using {self.__device}")
-
-        self.diarization_pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1", use_auth_token=self.__hf_token
-        ).to(torch.device(self.__device))
-        self.diarization_pipeline.to(torch.device(self.__device))
 
     def __seconds_to_srt_time(self, seconds) -> str:
         """
@@ -294,9 +300,13 @@ class WhisperAudioTranscriber:
         """
         Perform speaker diarization on the transcribed audio.
         """
-        self.__diarization_init()
+        if not self.__diarization_pipeline:
+            self.__logger.info("Initializing diarization pipeline...")
+            self.__diarization_pipeline = diarization_init(self.__hf_token)
+        else:
+            self.__logger.info("Diarization pipeline already initialized.")
 
-        if not self.diarization_pipeline:
+        if not self.__diarization_pipeline:
             raise Exception(
                 "Diarization pipeline not initialized. Please provide a HuggingFace token."
             )
@@ -307,7 +317,7 @@ class WhisperAudioTranscriber:
             )
 
         try:
-            diarization = self.diarization_pipeline(
+            diarization = self.__diarization_pipeline(
                 self.__audio_path, num_speakers=int(self.__speakers)
             )
             aligned_segments = self.__align_speakers(

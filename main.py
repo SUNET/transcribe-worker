@@ -8,6 +8,7 @@ from time import sleep
 from utils.log import get_logger, get_fileno
 from utils.settings import get_settings
 from utils.args import parse_arguments
+from utils.whisper import diarization_init
 
 settings = get_settings()
 logger = get_logger()
@@ -25,6 +26,7 @@ def mainloop(worker_id: int) -> None:
     logger.info(f"Worker thread {worker_id} started")
 
     api_url = f"{settings.API_BACKEND_URL}/api/{settings.API_VERSION}/job"
+    drz = diarization_init(settings.HF_TOKEN)
 
     while True:
         sleep(randint(10, 60))
@@ -35,6 +37,7 @@ def mainloop(worker_id: int) -> None:
             settings.FILE_STORAGE_DIR,
             hf_whisper=settings.HF_WHISPER,
             hf_token=settings.HF_TOKEN,
+            diarization_object=drz,
         ) as job:
             job.start()
 
