@@ -80,6 +80,7 @@ class TranscriptionJob:
         self.model = self.__get_model()
         self.speakers = job.get("speakers", 0)
         self.filename = self.uuid
+        self.output_format = job.get("output_format", "txt")
 
         if not self.speakers:
             self.speakers = 0
@@ -92,6 +93,7 @@ class TranscriptionJob:
         self.logger.info(f"  Model type: {self.model_type}")
         self.logger.info(f"  Filename: {self.filename}")
         self.logger.info(f"  Speakers: {self.speakers}")
+        self.logger.info(f"  Output format: {self.output_format}")
 
         self.logger.debug("Updating job status to IN_PROGRESS")
         self.__put_status(
@@ -119,9 +121,9 @@ class TranscriptionJob:
             return False
 
         self.logger.debug("Transcribing file")
-        res = self.__transcribe()
+        transcribed_seconds = self.__transcribe()
 
-        if not res:
+        if not transcribed_seconds:
             self.logger.error("Transcription failed")
             self.__put_status(
                 JobStatusEnum.FAILED,
@@ -141,8 +143,7 @@ class TranscriptionJob:
             return False
 
         self.logger.debug("Uploading results to backend")
-        transcribed_seconds = self.__put_result()
-        if not transcribed_seconds:
+        if not self.__put_result():
             self.logger.error("File upload failed")
             self.__put_status(
                 JobStatusEnum.FAILED,
@@ -154,6 +155,9 @@ class TranscriptionJob:
         self.logger.info(f"Job {self.uuid} completed successfully")
         self.__put_status(
             JobStatusEnum.COMPLETED, error=None, transcribed_seconds=transcribed_seconds
+        )
+        self.logger.info(
+            f"Transcription completed, total transcribed seconds: {transcribed_seconds}"
         )
 
         return True
@@ -173,12 +177,14 @@ class TranscriptionJob:
             hf_token=self.hf_token,
         )
 
-        transcriber.transcribe()
+        transcribed_seconds = transcriber.transcribe()
+
         srt = transcriber.subtitles()
 
-        print(srt)
-
-        drz = transcriber.diarization()
+        if self.output_format == "txt":
+            drz = transcriber.diarization()
+        else:
+            drz = None
 
         with open(
             Path(self.api_file_storage_dir) / f"{self.filename}.srt", "w"
@@ -191,7 +197,7 @@ class TranscriptionJob:
             ) as json_file:
                 json_file.write(json.dumps(dict(drz)))
 
-        return True
+        return transcribed_seconds
 
     def __run_cmd(self, command: list) -> bool:
         """
@@ -394,7 +400,6 @@ class TranscriptionJob:
         header = {
             "Content-Type": "application/json",
         }
-        transcribed_seconds = 0
 
         for output_format in ["srt", "vtt", "json", "txt", "mp4"]:
             try:
@@ -415,9 +420,6 @@ class TranscriptionJob:
 
                     if output_format == "json":
                         json_data["result"] = json.loads(data.decode("utf-8"))
-                        transcribed_seconds = int(
-                            json_data["result"]["segments"][-1]["end"]
-                        )
                     elif output_format == "srt":
                         json_data["result"] = data.decode("utf-8")
 
@@ -431,11 +433,11 @@ class TranscriptionJob:
                     response.raise_for_status()
             except requests.RequestException as e:
                 self.logger.error(f"Error uploading {output_format} file: {e}")
-                return None
+                return False
 
             self.logger.info(f"Uploaded {output_format} file for job {self.uuid}")
 
-        return transcribed_seconds
+        return True
 
     def __get_model(self) -> str:
         """
@@ -444,7 +446,7 @@ class TranscriptionJob:
         """
 
         if self.hf_whisper:
-            model = settings.WHISPER_MODELS_HF[self.langauge][self.model_type.lower()]
+            model = settings.WHISPER_MODELS_HF[self.language][self.model_type.lower()]
         else:
             model = (
                 "models/"
