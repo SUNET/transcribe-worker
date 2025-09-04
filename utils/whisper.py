@@ -13,6 +13,9 @@ from transformers import pipeline
 from typing import Optional
 from utils.settings import get_settings
 
+import textwrap
+from datetime import timedelta
+
 settings = get_settings()
 
 
@@ -335,31 +338,68 @@ class WhisperAudioTranscriber:
             )
             return None
 
+    def __ms_to_srt_time(self, ms: int) -> str:
+        """
+        Convert milliseconds to SRT timestamp format (HH:MM:SS,mmm).
+        """
+
+        td = timedelta(milliseconds=ms)
+        hours, remainder = divmod(td.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        return f"{td.days*24+hours:02}:{minutes:02}:{seconds:02},{td.microseconds // 1000:03}"
+
+    def __split_caption(
+        self, text: str, max_width: int = 42, max_lines: int = 2
+    ) -> list[list[str]]:
+        """
+        Split caption text into blocks of up to max_lines lines,
+        each line no longer than max_width characters.
+        """
+        words = text.strip().split()
+        wrapped = textwrap.wrap(
+            " ".join(words), width=max_width, break_long_words=False
+        )
+
+        # Group wrapped lines into subtitle blocks (1–2 lines each)
+        blocks = []
+        for i in range(0, len(wrapped), max_lines):
+            blocks.append(wrapped[i : i + max_lines])
+        return blocks
+
     def subtitles(self) -> str:
-        """
-        Generate subtitles from the transcription result.
-        """
         if not self.__result or "chunks" not in self.__result:
             raise Exception(
                 "Transcription result is not available or does not contain chunks."
             )
 
         index = 0
-        subtitles = ""
+        subtitles = []
         for chunk in self.__result["chunks"]:
-            start, end = chunk["timestamp_ms"]
+            start_ms, end_ms = chunk["timestamp"]
             text = chunk["text"].strip()
             if not text:
                 continue
 
-            caption = self.__caption_split(text)
-            subtitles += f"{index + 1}\n"
-            subtitles += f" {start} --> {end}\n"
-            subtitles += f"{caption}\n\n"
+            blocks = self.__split_caption(text, 42, 2)
 
-            index += 1
+            total_blocks = len(blocks)
+            duration = end_ms - start_ms
+            per_block = duration // total_blocks if total_blocks > 0 else duration
 
-        return subtitles
+            for i, block in enumerate(blocks):
+                block_start = start_ms + i * per_block
+                block_end = (
+                    start_ms + (i + 1) * per_block if i < total_blocks - 1 else end_ms
+                )
+
+                index += 1
+                block_text = "\n".join(block)
+                subtitles.append(
+                    f"{index}\n{self.__ms_to_srt_time(block_start)} --> {self.__ms_to_srt_time(block_end)}\n{block_text}\n"
+                )
+
+        return "\n".join(subtitles)
 
     def __get_device(self, torch: torch):
         """
