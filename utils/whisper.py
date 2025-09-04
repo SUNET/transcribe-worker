@@ -78,14 +78,74 @@ class WhisperAudioTranscriber:
         ).to(torch.device(self.__device))
         self.diarization_pipeline.to(torch.device(self.__device))
 
+    def __seconds_to_srt_time(self, seconds) -> str:
+        """
+        Convert seconds (float or string) to SRT timestamp format (HH:MM:SS,mmm).
+        """
+        seconds = float(seconds)  # ensure it's a float
+        millis = int(round((seconds % 1) * 1000))
+        total_seconds = int(seconds)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+
     def __transcribe_hf(self, filepath: str) -> list:
         """
         Transcribe the audio file using the Whisper model.
         """
-        self.__result = self.pipe(
+        result = self.pipe(
             filepath,
             generate_kwargs={"task": "transcribe", "language": self.__language},
         )
+
+        full_transcription = ""
+        segments = []
+        chunks = []
+
+        for item in result.get("chunks", []):
+            text = item.get("text", "").strip()
+
+            if full_transcription and not full_transcription.endswith(" "):
+                full_transcription += " "
+
+            full_transcription += text
+
+            start, end = item["timestamp"]
+
+            start = self.__seconds_to_srt_time(str(start))
+            end = self.__seconds_to_srt_time(str(end))
+
+            start_time = self.__parse_timestamp(start)
+            end_time = self.__parse_timestamp(end)
+            duration = end_time - start_time
+
+            # Create segment in new format
+            segment = {
+                "start": start_time,
+                "end": end_time,
+                "text": text,
+                "duration": duration,
+            }
+
+            chunk = {
+                "timestamp": (start_time, end_time),
+                "timestamp_ms": (start, end),
+                "text": text,
+            }
+
+            segments.append(segment)
+            chunks.append(chunk)
+
+        # Create the converted format
+        converted = {
+            "full_transcription": full_transcription,
+            "segments": segments,
+            "chunks": chunks,
+            "speaker_count": 1,  # Default to 1 - could be enhanced with actual speaker detection
+        }
+
+        self.__result = converted
+        self.__transcribed_seconds = end_time
 
         return self.__result
 
@@ -207,6 +267,7 @@ class WhisperAudioTranscriber:
         }
 
         self.__result = converted
+        self.__transcribed_seconds = end_time
 
         return converted
 
@@ -227,7 +288,7 @@ class WhisperAudioTranscriber:
         if not self.__result:
             raise Exception("Transcription result is not available.")
 
-        return self.__result
+        return self.__transcribed_seconds
 
     def diarization(self) -> dict:
         """
