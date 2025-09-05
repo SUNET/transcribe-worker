@@ -12,6 +12,7 @@ from transformers import AutoProcessor
 from transformers import pipeline
 from typing import Optional
 from utils.settings import get_settings
+from utils.log import get_logger
 
 settings = get_settings()
 
@@ -346,15 +347,17 @@ class WhisperAudioTranscriber:
 
         index = 0
         subtitles = ""
+
         for chunk in self.__result["chunks"]:
             start, end = chunk["timestamp_ms"]
             text = chunk["text"].strip()
+
             if not text:
                 continue
 
             caption = self.__caption_split(text)
             subtitles += f"{index + 1}\n"
-            subtitles += f" {start} --> {end}\n"
+            subtitles += f"{start} --> {end}\n"
             subtitles += f"{caption}\n\n"
 
             index += 1
@@ -439,18 +442,32 @@ class WhisperAudioTranscriber:
         Split a caption into two parts if it exceeds a certain length.
         """
         if len(caption) < 42:
-            return f" {caption}"
+            return f"{caption}"
 
-        words_list = caption.split()
-        words_len = len(words_list)
-        word_mid = words_len // 2
+        current_position = len(caption) // 2
+        characater = caption[current_position]
 
-        left_part = words_list[:word_mid]
-        right_part = words_list[word_mid:]
+        while characater != " ":
+            characater = caption[current_position]
+            current_position -= 1
 
-        new_caption = " "
-        new_caption += " ".join(left_part) + "\n"
-        new_caption += " "
-        new_caption += " ".join(right_part)
+        first_line = caption[: current_position + 1].strip()
+        second_line = caption[current_position + 1 :].strip()
+        new_caption = f"{first_line}\n{second_line}"
 
         return new_caption
+
+
+if __name__ == "__main__":
+    logger = get_logger()
+    logger.setLevel(logging.DEBUG)
+
+    w = WhisperAudioTranscriber(
+        logger=logger,
+        backend="cpp",
+        audio_path="/Users/khn/Downloads/Hurmantarsigigenomdagen.wav",
+        model_name="models/sv_large.bin",
+    )
+
+    w.transcribe()
+    print(w.subtitles())
