@@ -142,7 +142,7 @@ class WhisperAudioTranscriber:
         segments = []
         chunks = []
 
-        for item in items:
+        for index, item in enumerate(items):
             text = item.get("text", "").strip()
 
             if not text:
@@ -183,7 +183,18 @@ class WhisperAudioTranscriber:
 
                 if (end_time - start_time) < 1.5:
                     time_to_add = 1.5 - (end_time - start_time)
+                    next_item_start_time = self.__parse_timestamp(
+                        items[index + 1]["tokens"][0]["timestamps"]["from"]
+                        if index + 1 < len(items)
+                        else None
+                    )
+
                     end_time += time_to_add
+
+                    if next_item_start_time and end_time > next_item_start_time:
+                        end_time = next_item_start_time - 0.1
+
+                    end_time_token = self.__seconds_to_srt_time(str(end_time))
 
                 ts_ms = (start_time_token, end_time_token)
 
