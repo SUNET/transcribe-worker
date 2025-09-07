@@ -180,6 +180,11 @@ class WhisperAudioTranscriber:
 
                 end_time_token = item["tokens"][-1]["timestamps"]["to"]
                 end_time = self.__parse_timestamp(end_time_token)
+
+                if (end_time - start_time) < 1.5:
+                    time_to_add = 1.5 - (end_time - start_time)
+                    end_time += time_to_add
+
                 ts_ms = (start_time_token, end_time_token)
 
             duration = end_time - start_time
