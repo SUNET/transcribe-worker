@@ -96,66 +96,6 @@ class WhisperAudioTranscriber:
         minutes, secs = divmod(remainder, 60)
         return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
-    def __transcribe_hf(self, filepath: str) -> list:
-        """
-        Transcribe the audio file using the Whisper model.
-        """
-        result = self.pipe(
-            filepath,
-            generate_kwargs={"task": "transcribe", "language": self.__language},
-        )
-
-        full_transcription = ""
-        segments = []
-        chunks = []
-
-        for item in result.get("chunks", []):
-            text = item.get("text", "").strip()
-
-            if full_transcription and not full_transcription.endswith(" "):
-                full_transcription += " "
-
-            full_transcription += text
-
-            start, end = item["timestamp"]
-
-            start = self.__seconds_to_srt_time(str(start))
-            end = self.__seconds_to_srt_time(str(end))
-
-            start_time = self.__parse_timestamp(start)
-            end_time = self.__parse_timestamp(end)
-            duration = end_time - start_time
-
-            # Create segment in new format
-            segment = {
-                "start": start_time,
-                "end": end_time,
-                "text": text,
-                "duration": duration,
-            }
-
-            chunk = {
-                "timestamp": (start_time, end_time),
-                "timestamp_ms": (start, end),
-                "text": text,
-            }
-
-            segments.append(segment)
-            chunks.append(chunk)
-
-        # Create the converted format
-        converted = {
-            "full_transcription": full_transcription,
-            "segments": segments,
-            "chunks": chunks,
-            "speaker_count": 1,  # Default to 1 - could be enhanced with actual speaker detection
-        }
-
-        self.__result = converted
-        self.__transcribed_seconds = end_time
-
-        return self.__result
-
     def __run_cmd(self, command: list) -> bool:
         """
         Run a command using subprocess.run.
@@ -194,11 +134,93 @@ class WhisperAudioTranscriber:
 
         return total_seconds
 
-    def __transcribe_cpp(self, filepath: str):
+    def __process_transcription(self, items, source: str) -> dict:
         """
-        Transcribe the audio file using whisper.cpp, we expect the executable
-        to be in PATH.
+        Normalize and process transcription items from either HF or whisper.cpp.
         """
+        full_transcription = ""
+        segments = []
+        chunks = []
+
+        for item in items:
+            text = item.get("text", "").strip()
+
+            if not text:
+                continue
+
+            if source == "cpp":
+                try:
+                    text = bytes(text, "iso-8859-1").decode("utf-8")
+                except UnicodeDecodeError:
+                    self.__logger.error(
+                        f"Failed to decode {text} from transcription, using ISO-8859-1 encoding."
+                    )
+                    continue
+
+            if full_transcription and not full_transcription.endswith(" "):
+                full_transcription += " "
+
+            full_transcription += text
+
+            if source == "hf":
+                start, end = item["timestamp"]
+                start_ms = self.__seconds_to_srt_time(str(start))
+                end_ms = self.__seconds_to_srt_time(str(end))
+                start_time = self.__parse_timestamp(start_ms)
+                end_time = self.__parse_timestamp(end_ms)
+                ts_ms = (start_ms, end_ms)
+
+            else:
+                if item["tokens"][0]["text"] == "[_BEG_]":
+                    start_time_token = item["tokens"][1]["timestamps"]["from"]
+                    start_time = self.__parse_timestamp(start_time_token)
+                else:
+                    start_time_token = item["tokens"][0]["timestamps"]["from"]
+                    start_time = self.__parse_timestamp(start_time_token)
+
+                end_time_token = item["tokens"][-1]["timestamps"]["to"]
+                end_time = self.__parse_timestamp(end_time_token)
+                ts_ms = (start_time_token, end_time_token)
+
+            duration = end_time - start_time
+
+            segments.append(
+                {
+                    "start": start_time,
+                    "end": end_time,
+                    "text": text,
+                    "duration": duration,
+                }
+            )
+
+            chunks.append(
+                {
+                    "timestamp": (start_time, end_time),
+                    "timestamp_ms": ts_ms,
+                    "text": text,
+                }
+            )
+
+        converted = {
+            "full_transcription": full_transcription,
+            "segments": segments,
+            "chunks": chunks,
+            "speaker_count": 1,
+        }
+
+        self.__result = converted
+        self.__transcribed_seconds = segments[-1]["end"] if segments else 0
+
+        return converted
+
+    def __transcribe_hf(self, filepath: str) -> dict:
+        result = self.pipe(
+            filepath,
+            generate_kwargs={"task": "transcribe", "language": self.__language},
+        )
+        return self.__process_transcription(result.get("chunks", []), source="hf")
+
+    def __transcribe_cpp(self, filepath: str) -> dict:
         temp_filename = str(uuid.uuid4())
         command = [
             self.__whisper_cpp_path,
@@ -206,7 +228,7 @@ class WhisperAudioTranscriber:
             self.__language,
             "-ojf",
             "-of",
-            settings.FILE_STORAGE_DIR + "/" + temp_filename,
+            str(Path(settings.FILE_STORAGE_DIR) / temp_filename),
             "-m",
             self.__model_name,
             "-f",
@@ -216,67 +238,15 @@ class WhisperAudioTranscriber:
         if not self.__run_cmd(command):
             raise Exception("Failed to run whisper.cpp command")
 
-        with open(
-            str(Path(settings.FILE_STORAGE_DIR) / f"{temp_filename}.json"), "rb"
-        ) as f:
+        json_path = Path(settings.FILE_STORAGE_DIR) / f"{temp_filename}.json"
+        with open(json_path, "rb") as f:
             json_str = f.read()
-
-        os.remove(str(Path(settings.FILE_STORAGE_DIR) / f"{temp_filename}.json"))
+        os.remove(json_path)
 
         result = json.loads(json_str.decode("iso-8859-1"))
-
-        full_transcription = ""
-        segments = []
-        chunks = []
-
-        for item in result.get("transcription", []):
-            text = item.get("text", "").strip()
-
-            try:
-                text = bytes(text, "iso-8859-1").decode("utf-8")
-            except UnicodeDecodeError:
-                self.__logger.error(
-                    f"Failed to decode {text} from transcription, using ISO-8859-1 encoding."
-                )
-                continue
-
-            if full_transcription and not full_transcription.endswith(" "):
-                full_transcription += " "
-
-            full_transcription += text
-            start_time = self.__parse_timestamp(item["timestamps"]["from"])
-            end_time = self.__parse_timestamp(item["timestamps"]["to"])
-            duration = end_time - start_time
-
-            # Create segment in new format
-            segment = {
-                "start": start_time,
-                "end": end_time,
-                "text": text,
-                "duration": duration,
-            }
-
-            chunk = {
-                "timestamp": (start_time, end_time),
-                "timestamp_ms": (item["timestamps"]["from"], item["timestamps"]["to"]),
-                "text": text,
-            }
-
-            segments.append(segment)
-            chunks.append(chunk)
-
-        # Create the converted format
-        converted = {
-            "full_transcription": full_transcription,
-            "segments": segments,
-            "chunks": chunks,
-            "speaker_count": 1,  # Default to 1 - could be enhanced with actual speaker detection
-        }
-
-        self.__result = converted
-        self.__transcribed_seconds = end_time
-
-        return converted
+        return self.__process_transcription(
+            result.get("transcription", []), source="cpp"
+        )
 
     def transcribe(self) -> dict:
         """
@@ -335,34 +305,6 @@ class WhisperAudioTranscriber:
                 f"Error during transcription with diarization: {str(e)}"
             )
             return None
-
-    def subtitles(self) -> str:
-        """
-        Generate subtitles from the transcription result.
-        """
-        if not self.__result or "chunks" not in self.__result:
-            raise Exception(
-                "Transcription result is not available or does not contain chunks."
-            )
-
-        index = 0
-        subtitles = ""
-
-        for chunk in self.__result["chunks"]:
-            start, end = chunk["timestamp_ms"]
-            text = chunk["text"].strip()
-
-            if not text:
-                continue
-
-            caption = self.__caption_split(text)
-            subtitles += f"{index + 1}\n"
-            subtitles += f"{start} --> {end}\n"
-            subtitles += f"{caption}\n\n"
-
-            index += 1
-
-        return subtitles
 
     def __get_device(self, torch: torch):
         """
@@ -427,6 +369,32 @@ class WhisperAudioTranscriber:
 
         return list(active_speakers)
 
+    def subtitles(self) -> str:
+        """
+        Generate subtitles from the transcription result.
+        """
+        if not self.__result or "chunks" not in self.__result:
+            raise Exception(
+                "Transcription result is not available or does not contain chunks."
+            )
+
+        index = 0
+        subtitles = ""
+
+        for index, chunk in enumerate(self.__result["chunks"]):
+            start, end = chunk["timestamp_ms"]
+            text = chunk["text"].strip()
+
+            if not text:
+                continue
+
+            caption = self.__caption_split(text)
+            subtitles += f"{index + 1}\n"
+            subtitles += f"{start} --> {end}\n"
+            subtitles += f"{caption}\n\n"
+
+        return subtitles
+
     def __format_timestamp(self, seconds):
         """
         Format a timestamp in seconds to MM:SS format.
@@ -456,18 +424,3 @@ class WhisperAudioTranscriber:
         new_caption = f"{first_line}\n{second_line}"
 
         return new_caption
-
-
-if __name__ == "__main__":
-    logger = get_logger()
-    logger.setLevel(logging.DEBUG)
-
-    w = WhisperAudioTranscriber(
-        logger=logger,
-        backend="cpp",
-        audio_path="/Users/khn/Downloads/Hurmantarsigigenomdagen.wav",
-        model_name="models/sv_large.bin",
-    )
-
-    w.transcribe()
-    print(w.subtitles())
