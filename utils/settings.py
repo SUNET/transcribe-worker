@@ -40,39 +40,40 @@ class Settings(BaseSettings):
     # Mapping between language and model
     WHISPER_MODELS_CPP: ClassVar[dict[str, dict[str, str]]] = {
         "Swedish": {
-            "tiny": "sv_tiny.bin",
-            "base": "sv_base.bin",
-            "small": "sv_small.bin",
-            "medium": "sv_medium.bin",
-            "large": "sv_large.bin",
+            "fast transcription (normal accuracy)": "sv_base.bin",
+            "slower transcription (higher accuracy)": "sv_large.bin",
         },
         "English": {
-            "tiny": "whisper_tiny.bin",
-            "base": "whisper_base.bin",
-            "small": "whisper_small.bin",
-            "medium": "whisper_medium.bin",
-            "large": "whisper_large.bin",
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
         },
         "Finnish": {
-            "tiny": "whisper_tiny.bin",
-            "base": "whisper_base.bin",
-            "small": "whisper_small.bin",
-            "medium": "whisper_medium.bin",
-            "large": "whisper_large.bin",
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
         },
         "Danish": {
-            "tiny": "whisper_tiny.bin",
-            "base": "whisper_base.bin",
-            "small": "whisper_small.bin",
-            "medium": "whisper_medium.bin",
-            "large": "whisper_large.bin",
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
         },
         "Norwegian": {
-            "tiny": "whisper_tiny.bin",
-            "base": "whisper_base.bin",
-            "small": "whisper_small.bin",
-            "medium": "whisper_medium.bin",
-            "large": "whisper_large.bin",
+            "fast transcription (normal accuracy)": "no_base.bin",
+            "slower transcription (higher accuracy)": "no_large.bin",
+        },
+        "French": {
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
+        },
+        "German": {
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
+        },
+        "Spanish": {
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
+        },
+        "Italian": {
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
         },
     }
 
