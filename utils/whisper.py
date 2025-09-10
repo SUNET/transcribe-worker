@@ -12,7 +12,6 @@ from transformers import AutoProcessor
 from transformers import pipeline
 from typing import Optional
 from utils.settings import get_settings
-from utils.log import get_logger
 
 settings = get_settings()
 
@@ -62,6 +61,12 @@ class WhisperAudioTranscriber:
         self.__logger = logger
         self.__speakers = speakers
         self.__diarization_pipeline = diarization_object
+        self.__tokens_to_ignore = [
+            "<|nospeech|>",
+            "<|p>",
+            "<|>",
+            '"',
+        ]
 
         if backend == "hf":
             self.__hf_init()
@@ -131,7 +136,9 @@ class WhisperAudioTranscriber:
         return True
 
     def __parse_timestamp(self, timestamp_str):
-        # Split by comma to separate seconds and milliseconds
+        if timestamp_str is None:
+            return None
+
         time_part, ms_part = timestamp_str.split(",")
 
         if not ms_part:
@@ -157,6 +164,9 @@ class WhisperAudioTranscriber:
             text = item.get("text", "").strip()
 
             if not text:
+                continue
+
+            if text in self.__tokens_to_ignore:
                 continue
 
             if source == "cpp":
