@@ -14,16 +14,23 @@ from utils.settings import get_settings
 settings = get_settings()
 
 
+def get_torch_device() -> tuple:
+    """
+    Determine the device to use for model inference.
+    """
+    if torch.cuda.is_available():
+        return "cuda:0", torch.float16
+    elif torch.backends.mps.is_available():
+        return "mps", torch.float16
+    else:
+        return "cpu", torch.float32
+
+
 def diarization_init(hf_token: str):
     """
     Initializes the diarization pipeline using HuggingFace's PyAnnote.
     """
-    if torch.cuda.is_available():
-        device = "cuda:0"
-    elif torch.backends.mps.is_available():
-        device = "mps"
-    else:
-        device = "cpu"
+    device, _ = get_torch_device()
 
     return Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1", use_auth_token=hf_token
@@ -51,7 +58,7 @@ class WhisperAudioTranscriber:
         self.__audio_path = audio_path
         self.__model_name = model_name
         self.__hf_token = hf_token
-        self.__device, self.__torch_dtype = self.__get_device(torch)
+        self.__device, self.__torch_dtype = get_torch_device()
         self.__language = language
         self.__result = None
         self.__whisper_cpp_path = whisper_cpp_path
@@ -343,17 +350,6 @@ class WhisperAudioTranscriber:
                 f"Error during transcription with diarization: {str(e)}"
             )
             return None
-
-    def __get_device(self, torch: torch):
-        """
-        Determine the device to use for model inference.
-        """
-        if torch.cuda.is_available():
-            return "cuda:0", torch.float16
-        elif torch.backends.mps.is_available():
-            return "mps", torch.float16
-        else:
-            return "cpu", torch.float32
 
     def __align_speakers(self, transcription_chunks, diarization):
         """
