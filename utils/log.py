@@ -5,8 +5,8 @@ from utils.args import parse_arguments
 
 def get_logger():
     """
-    Get a logger instance for the application.
-    If the logger already has handlers, it returns the existing logger.
+    Get a logger instance for the application. If the logger already has
+    handlers, it returns the existing logger.
     """
 
     logger = logging.getLogger(__name__)

@@ -26,7 +26,7 @@ def get_torch_device() -> tuple:
         return "cpu", torch.float32
 
 
-def diarization_init(hf_token: str):
+def diarization_init(hf_token: str) -> Optional[Pipeline]:
     """
     Initializes the diarization pipeline using HuggingFace's PyAnnote.
     """
@@ -49,7 +49,7 @@ class WhisperAudioTranscriber:
         hf_token: Optional[str] = None,
         whisper_cpp_path: Optional[str] = settings.WHISPER_CPP_PATH,
         diarization_object: Optional[Pipeline] = None,
-    ):
+    ) -> None:
         """
         Initializes the WhisperAudioTranscriber with the audio
         file path, model name,
@@ -76,7 +76,7 @@ class WhisperAudioTranscriber:
         if backend == "hf":
             self.__hf_init()
 
-    def __hf_init(self):
+    def __hf_init(self) -> None:
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             self.__model_name,
             torch_dtype=self.__torch_dtype,
@@ -97,7 +97,8 @@ class WhisperAudioTranscriber:
 
     def __seconds_to_srt_time(self, seconds) -> str:
         """
-        Convert seconds (float or string) to SRT timestamp format (HH:MM:SS,mmm).
+        Convert seconds (float or string) to SRT timestamp format
+        (HH:MM:SS,mmm).
         """
         seconds = float(seconds)  # ensure it's a float
         millis = int(round((seconds % 1) * 1000))
@@ -140,7 +141,7 @@ class WhisperAudioTranscriber:
 
         return True
 
-    def __parse_timestamp(self, timestamp_str):
+    def __parse_timestamp(self, timestamp_str) -> Optional[float]:
         if timestamp_str is None:
             return None
 
@@ -159,7 +160,8 @@ class WhisperAudioTranscriber:
 
     def __process_transcription(self, items, source: str) -> dict:
         """
-        Normalize and process transcription items from either HF or whisper.cpp.
+        Normalize and process transcription items from either HF or
+        whisper.cpp.
         """
         full_transcription = ""
         segments = []
@@ -351,7 +353,7 @@ class WhisperAudioTranscriber:
             )
             return None
 
-    def __align_speakers(self, transcription_chunks, diarization):
+    def __align_speakers(self, transcription_chunks, diarization) -> list:
         """
         Align transcription chunks with speaker diarization results.
         """
@@ -381,7 +383,7 @@ class WhisperAudioTranscriber:
 
         return aligned_segments
 
-    def __get_speaker(self, diarization, time_point):
+    def __get_speaker(self, diarization, time_point) -> str:
         """
         Get the speaker label for a specific time point in the diarization.
         """
@@ -391,9 +393,10 @@ class WhisperAudioTranscriber:
 
         return "UNKNOWN"
 
-    def __get_speakers_in_range(self, diarization, start_time, end_time):
+    def __get_speakers_in_range(self, diarization, start_time, end_time) -> list:
         """
-        Get a list of active speakers within a specific time range in the diarization.
+        Get a list of active speakers within a specific time range in the
+        diarization.
         """
         active_speakers = set()
 
@@ -429,7 +432,7 @@ class WhisperAudioTranscriber:
 
         return subtitles
 
-    def __format_timestamp(self, seconds):
+    def __format_timestamp(self, seconds) -> str:
         """
         Format a timestamp in seconds to MM:SS format.
         """
@@ -439,7 +442,7 @@ class WhisperAudioTranscriber:
 
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def __caption_split(self, caption):
+    def __caption_split(self, caption) -> str:
         """
         Split a caption into two parts if it exceeds a certain length.
         """
