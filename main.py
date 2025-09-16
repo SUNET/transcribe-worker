@@ -5,9 +5,9 @@ import threading
 from daemonize import Daemonize
 from random import randint
 from time import sleep
-from utils.log import get_logger, get_fileno
-from utils.settings import get_settings
 from utils.args import parse_arguments
+from utils.log import get_fileno, get_logger
+from utils.settings import get_settings
 from utils.whisper import diarization_init
 
 settings = get_settings()

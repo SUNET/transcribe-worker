@@ -1,13 +1,13 @@
+import json
+import logging
 import requests
 import subprocess
-import logging
-import json
 
 from enum import Enum
 from pathlib import Path
 from typing import Optional
-from utils.whisper import WhisperAudioTranscriber
 from utils import settings
+from utils.whisper import WhisperAudioTranscriber
 
 settings = settings.get_settings()
 

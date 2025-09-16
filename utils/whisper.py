@@ -7,9 +7,7 @@ import uuid
 
 from pathlib import Path
 from pyannote.audio import Pipeline
-from transformers import AutoModelForSpeechSeq2Seq
-from transformers import AutoProcessor
-from transformers import pipeline
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 from typing import Optional
 from utils.settings import get_settings
 
@@ -255,6 +253,9 @@ class WhisperAudioTranscriber:
             filepath,
             generate_kwargs={"task": "transcribe", "language": self.__language},
         )
+
+        breakpoint()
+
         return self.__process_transcription(result.get("chunks", []), source="hf")
 
     def __transcribe_cpp(self, filepath: str) -> dict:
