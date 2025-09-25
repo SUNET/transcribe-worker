@@ -49,12 +49,12 @@ class Settings(BaseSettings):
             "slower transcription (higher accuracy)": "whisper_large.bin",
         },
         "Finnish": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
+            "fast transcription (normal accuracy)": "fi_base.bin",
+            "slower transcription (higher accuracy)": "fi_large.bin",
         },
         "Danish": {
             "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
+            "slower transcription (higher accuracy)": "dk_large.bin",
         },
         "Norwegian": {
             "fast transcription (normal accuracy)": "no_base.bin",
@@ -73,6 +73,14 @@ class Settings(BaseSettings):
             "slower transcription (higher accuracy)": "whisper_large.bin",
         },
         "Italian": {
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
+        },
+        "Russian": {
+            "fast transcription (normal accuracy)": "whisper_base.bin",
+            "slower transcription (higher accuracy)": "whisper_large.bin",
+        },
+        "Ukrainian": {
             "fast transcription (normal accuracy)": "whisper_base.bin",
             "slower transcription (higher accuracy)": "whisper_large.bin",
         },

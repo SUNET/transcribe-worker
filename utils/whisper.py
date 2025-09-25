@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import subprocess
+import textwrap
 import torch
 import uuid
 
@@ -161,7 +162,8 @@ class WhisperAudioTranscriber:
     def __process_transcription(self, items, source: str) -> dict:
         """
         Normalize and process transcription items from either HF or
-        whisper.cpp.
+        whisper.cpp. Ensures subtitle chunks are max 2 lines
+        and each line max 42 characters.
         """
         full_transcription = ""
         segments = []
@@ -169,11 +171,7 @@ class WhisperAudioTranscriber:
 
         for index, item in enumerate(items):
             text = item.get("text", "").strip()
-
-            if not text:
-                continue
-
-            if text in self.__tokens_to_ignore:
+            if not text or text in self.__tokens_to_ignore:
                 continue
 
             if source == "cpp":
@@ -187,18 +185,9 @@ class WhisperAudioTranscriber:
 
             if full_transcription and not full_transcription.endswith(" "):
                 full_transcription += " "
-
             full_transcription += text
 
-            if source == "hf":
-                start, end = item["timestamp"]
-                start_ms = self.__seconds_to_srt_time(str(start))
-                end_ms = self.__seconds_to_srt_time(str(end))
-                start_time = self.__parse_timestamp(start_ms)
-                end_time = self.__parse_timestamp(end_ms)
-                ts_ms = (start_ms, end_ms)
-
-            else:
+            if source == "cpp":
                 if item["tokens"][0]["text"] == "[_BEG_]":
                     start_time_token = item["tokens"][1]["timestamps"]["from"]
                     start_time = self.__parse_timestamp(start_time_token)
@@ -218,16 +207,16 @@ class WhisperAudioTranscriber:
                     )
 
                     end_time += time_to_add
-
                     if next_item_start_time and end_time > next_item_start_time:
                         end_time = next_item_start_time - 0.1
 
                     end_time_token = self.__seconds_to_srt_time(str(end_time))
 
-                ts_ms = (start_time_token, end_time_token)
+            else:
+                start_time = float(item.get("start", 0))
+                end_time = float(item.get("end", 0))
 
             duration = end_time - start_time
-
             segments.append(
                 {
                     "start": start_time,
@@ -237,13 +226,30 @@ class WhisperAudioTranscriber:
                 }
             )
 
-            chunks.append(
-                {
-                    "timestamp": (start_time, end_time),
-                    "timestamp_ms": ts_ms,
-                    "text": text,
-                }
-            )
+            wrapped_lines = textwrap.wrap(text, width=42)
+            grouped_chunks = []
+
+            for i in range(0, len(wrapped_lines), 2):
+                lines = wrapped_lines[i : i + 2]
+                grouped_chunks.append("\n".join(lines))
+
+            if grouped_chunks:
+                part_duration = duration / len(grouped_chunks)
+                for i, part_text in enumerate(grouped_chunks):
+                    part_start = start_time + i * part_duration
+                    part_end = start_time + (i + 1) * part_duration
+                    part_text = part_text.replace("\n", " ").strip()
+
+                    chunks.append(
+                        {
+                            "timestamp": (part_start, part_end),
+                            "timestamp_ms": (
+                                self.__seconds_to_srt_time(str(part_start)),
+                                self.__seconds_to_srt_time(str(part_end)),
+                            ),
+                            "text": part_text,
+                        }
+                    )
 
         converted = {
             "full_transcription": full_transcription,
@@ -262,8 +268,6 @@ class WhisperAudioTranscriber:
             filepath,
             generate_kwargs={"task": "transcribe", "language": self.__language},
         )
-
-        breakpoint()
 
         return self.__process_transcription(result.get("chunks", []), source="hf")
 
