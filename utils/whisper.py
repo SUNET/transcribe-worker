@@ -263,8 +263,6 @@ class WhisperAudioTranscriber:
             generate_kwargs={"task": "transcribe", "language": self.__language},
         )
 
-        breakpoint()
-
         return self.__process_transcription(result.get("chunks", []), source="hf")
 
     def __transcribe_cpp(self, filepath: str) -> dict:
