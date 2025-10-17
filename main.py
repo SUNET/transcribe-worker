@@ -61,7 +61,6 @@ def healthcheck() -> None:
         except requests.RequestException as e:
             logger.error(f"Healthcheck failed: {e}")
 
-        logger.debug("Healthcheck: Sent")
         sleep(10)
 
 
