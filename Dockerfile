@@ -31,7 +31,6 @@ COPY main.py .
 COPY utils/ utils/
 COPY requirements.txt .
 
-
 # Install broker dependencies
 RUN python3 -m venv venv && \
 	. venv/bin/activate && \
@@ -39,4 +38,4 @@ RUN python3 -m venv venv && \
 	pip install --no-cache-dir -r requirements.txt
 
 # Run worker
-CMD ["/app/venv/bin/python3", "main.py"]
+CMD ["/app/venv/bin/python3", "main.py", "--foreground", "--debug", "--no-healthcheck"]
