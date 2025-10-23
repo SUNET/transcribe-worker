@@ -1,9 +1,9 @@
 import gpustat
+import multiprocessing as mp
 import os
 import psutil
 import requests
 import sys
-import threading
 
 from daemonize import Daemonize
 from random import randint
@@ -69,7 +69,7 @@ def mainloop(worker_id: int) -> None:
     Main function to fetch jobs and process them.
     """
 
-    logger.info(f"Worker thread {worker_id} started")
+    logger.info(f"Starting worker process {worker_id}...")
 
     api_url = f"{settings.API_BACKEND_URL}/api/{settings.API_VERSION}/job"
     drz = diarization_init(settings.HF_TOKEN)
@@ -92,12 +92,16 @@ def main() -> None:
     logger.info("Starting transcription service...")
 
     # Start the healthcheck thread
-    health_thread = threading.Thread(target=healthcheck)
-    health_thread.start()
+    processes = [mp.Process(target=healthcheck)]
+    processes += [
+        mp.Process(target=mainloop, args=(i,)) for i in range(settings.WORKERS)
+    ]
 
-    for i in range(settings.WORKERS):
-        thread = threading.Thread(target=mainloop, args=(i,))
-        thread.start()
+    for p in processes:
+        p.start()
+
+    for p in processes:
+        p.join()
 
 
 def daemon_kill() -> None:
