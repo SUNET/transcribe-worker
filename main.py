@@ -15,7 +15,7 @@ from utils.whisper import diarization_init
 
 settings = get_settings()
 logger = get_logger()
-foreground, pidfile, zap, _, _, _ = parse_arguments()
+foreground, pidfile, zap, _, _, _, no_healthcheck = parse_arguments()
 
 if not zap:
     from utils.job import TranscriptionJob
@@ -91,8 +91,11 @@ def mainloop(worker_id: int) -> None:
 def main() -> None:
     logger.info("Starting transcription service...")
 
-    # Start the healthcheck thread
-    processes = [mp.Process(target=healthcheck)]
+    if no_healthcheck:
+        processes = []
+    else:
+        processes = [mp.Process(target=healthcheck)]
+
     processes += [
         mp.Process(target=mainloop, args=(i,)) for i in range(settings.WORKERS)
     ]

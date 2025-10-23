@@ -34,12 +34,17 @@ def parse_arguments() -> tuple:
         help="Enable debug mode.",
     )
 
-    # Log to either syslog or stdout
     parser.add_argument(
         "--logfile",
         type=str,
         default="",
         help="Path to log file.",
+    )
+
+    parser.add_argument(
+        "--no-healthcheck",
+        action="store_true",
+        help="Disable healthcheck thread.",
     )
 
     args = parser.parse_args()
@@ -51,4 +56,5 @@ def parse_arguments() -> tuple:
         args.envfile,
         args.debug,
         args.logfile,
+        args.no_healthcheck,
     )
