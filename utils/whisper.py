@@ -33,7 +33,7 @@ def diarization_init(hf_token: str) -> Optional[Pipeline]:
     device, _ = get_torch_device()
 
     return Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1", use_auth_token=hf_token
+        "pyannote/speaker-diarization-community-1", token=hf_token
     ).to(torch.device(device))
 
 
@@ -49,6 +49,7 @@ class WhisperAudioTranscriber:
         hf_token: Optional[str] = None,
         whisper_cpp_path: Optional[str] = settings.WHISPER_CPP_PATH,
         diarization_object: Optional[Pipeline] = None,
+        revision: Optional[str] = "",
     ) -> None:
         """
         Initializes the WhisperAudioTranscriber with the audio
@@ -58,7 +59,7 @@ class WhisperAudioTranscriber:
         self.__audio_path = audio_path
         self.__model_name = model_name
         self.__hf_token = hf_token
-        self.__device, self.__torch_dtype = get_torch_device()
+        self.__device, self.__dtype = get_torch_device()
         self.__language = language
         self.__result = None
         self.__whisper_cpp_path = whisper_cpp_path
@@ -66,6 +67,7 @@ class WhisperAudioTranscriber:
         self.__logger = logger
         self.__speakers = speakers
         self.__diarization_pipeline = diarization_object
+        self.__revision = revision
         self.__tokens_to_ignore = [
             "<|nospeech|>",
             "<|p>",
@@ -77,11 +79,17 @@ class WhisperAudioTranscriber:
             self.__hf_init()
 
     def __hf_init(self) -> None:
+        args = {
+            "dtype": self.__dtype,
+            "use_safetensors": True,
+            "cache_dir": "cache",
+        }
+
+        if self.__revision:
+            args["revision"] = self.__revision
+
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            self.__model_name,
-            torch_dtype=self.__torch_dtype,
-            use_safetensors=True,
-            cache_dir="cache",
+            self.__model_name, **args
         )
         self.model.to(self.__device)
         self.processor = AutoProcessor.from_pretrained(self.__model_name)
@@ -90,7 +98,7 @@ class WhisperAudioTranscriber:
             model=self.__model_name,
             tokenizer=self.processor.tokenizer,
             feature_extractor=self.processor.feature_extractor,
-            torch_dtype=self.__torch_dtype,
+            dtype=self.__dtype,
             device=self.__device,
             return_timestamps=True,
         )
@@ -300,6 +308,8 @@ class WhisperAudioTranscriber:
         if not os.path.exists(self.__audio_path):
             raise FileNotFoundError(f"Audio file {self.__audio_path} does not exist.")
 
+        self.__logger.info(f"Starting transcription using backend: {self.__backend}")
+
         match self.__backend:
             case "hf":
                 self.__transcribe_hf(self.__audio_path)
@@ -337,6 +347,7 @@ class WhisperAudioTranscriber:
             diarization = self.__diarization_pipeline(
                 self.__audio_path, num_speakers=int(self.__speakers)
             )
+
             aligned_segments = self.__align_speakers(
                 self.__result["chunks"], diarization
             )
@@ -344,12 +355,17 @@ class WhisperAudioTranscriber:
             return {
                 "full_transcription": self.__result["full_transcription"],
                 "segments": aligned_segments,
-                "speaker_count": len(list(diarization.labels())) if diarization else 0,
+                "speaker_count": len(
+                    list(diarization.exclusive_speaker_diarization.labels())
+                )
+                if diarization
+                else 0,
             }
         except Exception as e:
             self.__logger.error(
                 f"Error during transcription with diarization: {str(e)}"
             )
+
             return None
 
     def __align_speakers(self, transcription_chunks, diarization) -> list:
@@ -386,7 +402,9 @@ class WhisperAudioTranscriber:
         """
         Get the speaker label for a specific time point in the diarization.
         """
-        for segment, _, speaker in diarization.itertracks(yield_label=True):
+        for segment, _, speaker in diarization.exclusive_speaker_diarization.itertracks(
+            yield_label=True
+        ):
             if segment.start <= time_point <= segment.end:
                 return speaker
 
@@ -399,7 +417,9 @@ class WhisperAudioTranscriber:
         """
         active_speakers = set()
 
-        for segment, _, speaker in diarization.itertracks(yield_label=True):
+        for segment, _, speaker in diarization.exclusive_speaker_diarization.itertracks(
+            yield_label=True
+        ):
             if not (segment.end < start_time or segment.start > end_time):
                 active_speakers.add(speaker)
 
