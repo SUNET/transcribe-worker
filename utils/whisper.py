@@ -176,6 +176,9 @@ class WhisperAudioTranscriber:
             if text in self.__tokens_to_ignore:
                 continue
 
+            if text.statrswith("<") and text.endswith(">"):
+                continue
+
             if source == "cpp":
                 try:
                     text = bytes(text, "iso-8859-1").decode("utf-8")
