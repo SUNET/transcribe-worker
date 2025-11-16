@@ -291,6 +291,8 @@ class TranscriptionJob:
             "1",
             "-f",
             "wav",
+            "-af",
+            "highpass=f=120",
             "-y",
             str(Path(self.api_file_storage_dir) / output_filename),
             "-y",
