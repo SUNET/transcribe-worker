@@ -176,7 +176,7 @@ class WhisperAudioTranscriber:
             if text in self.__tokens_to_ignore:
                 continue
 
-            if text.statrswith("<") and text.endswith(">"):
+            if text.startswith("<") and text.endswith(">"):
                 continue
 
             if source == "cpp":
