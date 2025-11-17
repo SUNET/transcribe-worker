@@ -276,6 +276,7 @@ class WhisperAudioTranscriber:
             str(Path(settings.FILE_STORAGE_DIR) / temp_filename),
             "-m",
             self.__model_name,
+            "-sns",
             "-f",
             filepath,
         ]
@@ -449,9 +450,16 @@ class WhisperAudioTranscriber:
             return f"{caption}"
 
         current_position = len(caption) // 2
+
+        if current_position >= len(caption):
+            current_position = len(caption) - 1
+
         characater = caption[current_position]
 
         while characater != " ":
+            if current_position == 0 or len(caption) <= current_position:
+                break
+
             characater = caption[current_position]
             current_position -= 1
 
