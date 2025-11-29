@@ -88,39 +88,24 @@ class Settings(BaseSettings):
 
     WHISPER_MODELS_HF: ClassVar[dict[str, dict[str, str]]] = {
         "Swedish": {
-            "tiny": "kblab/kb-whisper-tiny",
-            "base": "kblab/kb-whisper-base",
-            "small": "kblab/kb-whisper-small",
-            "medium": "kblab/kb-whisper-medium",
-            "large": "kblab/kb-whisper-large",
+            "fast transcription (normal accuracy)": "kblab/kb-whisper-base",
+            "slower transcription (higher accuracy)": "kblab/kb-whisper-large",
         },
         "English": {
-            "tiny": "openai/whisper-tiny-en",
-            "base": "openai/whisper-base-en",
-            "small": "openai/whisper-small-en",
-            "medium": "openai/whisper-medium-en",
-            "large": "openai/whisper-large-en",
+            "fast transcription (normal accuracy)": "openai/whisper-base-en",
+            "slower transcription (higher accuracy)": "openai/whisper-large-en",
         },
         "Finnish": {
-            "tiny": "openai/whisper-tiny",
-            "base": "openai/whisper-base",
-            "small": "openai/whisper-small",
-            "medium": "openai/whisper-medium",
-            "large": "openai/whisper-large-v2",
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v2",
         },
         "Danish": {
-            "tiny": "openai/whisper-tiny",
-            "base": "openai/whisper-base",
-            "small": "openai/whisper-small",
-            "medium": "openai/whisper-medium",
-            "large": "openai/whisper-large-v2",
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v2",
         },
         "Norwegian": {
-            "tiny": "openai/whisper-tiny",
-            "base": "openai/whisper-base",
-            "small": "openai/whisper-small",
-            "medium": "openai/whisper-medium",
-            "large": "openai/whisper-large-v2",
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v2",
         },
     }
 
