@@ -11,11 +11,12 @@ from time import sleep
 from utils.args import parse_arguments
 from utils.log import get_fileno, get_logger
 from utils.settings import get_settings
-from utils.whisper import diarization_init
+from utils.whisper import diarization_init, models_download
+
 
 settings = get_settings()
 logger = get_logger()
-foreground, pidfile, zap, _, _, _, no_healthcheck = parse_arguments()
+foreground, pidfile, zap, _, _, _, no_healthcheck, models = parse_arguments()
 
 if not zap:
     from utils.job import TranscriptionJob
@@ -81,7 +82,6 @@ def mainloop(worker_id: int) -> None:
             logger,
             api_url,
             settings.FILE_STORAGE_DIR,
-            hf_whisper=settings.HF_WHISPER,
             hf_token=settings.HF_TOKEN,
             diarization_object=drz,
         ) as job:
@@ -139,6 +139,9 @@ def daemon_running() -> None:
 
 
 if __name__ == "__main__":
+    if models:
+        models_download(logger)
+        sys.exit(0)
     if zap:
         daemon_kill()
     elif foreground:

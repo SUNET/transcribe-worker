@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import ClassVar
 from utils.args import parse_arguments
 
-_, _, _, envfile, _, _, _ = parse_arguments()
+_, _, _, envfile, _, _, _, _ = parse_arguments()
 
 
 class Settings(BaseSettings):
@@ -28,84 +28,57 @@ class Settings(BaseSettings):
     FFMPEG_PATH: str = "ffmpeg"
 
     # HF Whisper configuration.
-    HF_WHISPER: bool = False
     HF_TOKEN: str = ""
 
     # SSL configuration
     SSL_CERTFILE: str = ""
     SSL_KEYFILE: str = ""
 
-    # whisper.cpp path
-    WHISPER_CPP_PATH: str = "whisper-cli"
-
     # Mapping between language and model
-    WHISPER_MODELS_CPP: ClassVar[dict[str, dict[str, str]]] = {
-        "Swedish": {
-            "fast transcription (normal accuracy)": "sv_base.bin",
-            "slower transcription (higher accuracy)": "sv_large.bin",
-        },
-        "English": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-        "Finnish": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-        "Danish": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "dk_large.bin",
-        },
-        "Norwegian": {
-            "fast transcription (normal accuracy)": "no_base.bin",
-            "slower transcription (higher accuracy)": "no_large.bin",
-        },
-        "French": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-        "German": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-        "Spanish": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-        "Italian": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-        "Russian": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-        "Ukrainian": {
-            "fast transcription (normal accuracy)": "whisper_base.bin",
-            "slower transcription (higher accuracy)": "whisper_large.bin",
-        },
-    }
-
     WHISPER_MODELS_HF: ClassVar[dict[str, dict[str, str]]] = {
         "Swedish": {
             "fast transcription (normal accuracy)": "kblab/kb-whisper-base",
             "slower transcription (higher accuracy)": "kblab/kb-whisper-large",
         },
         "English": {
-            "fast transcription (normal accuracy)": "openai/whisper-base-en",
-            "slower transcription (higher accuracy)": "openai/whisper-large-en",
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v3",
         },
         "Finnish": {
-            "fast transcription (normal accuracy)": "openai/whisper-base",
-            "slower transcription (higher accuracy)": "openai/whisper-large-v2",
+            "fast transcription (normal accuracy)": "Finnish-NLP/whisper-medium-finnish",
+            "slower transcription (higher accuracy)": "Finnish-NLP/whisper-large-finnish-v3",
         },
         "Danish": {
-            "fast transcription (normal accuracy)": "openai/whisper-base",
-            "slower transcription (higher accuracy)": "openai/whisper-large-v2",
+            "fast transcription (normal accuracy)": "syvai/hviske-v2",
+            "slower transcription (higher accuracy)": "syvai/hviske-v2",
         },
         "Norwegian": {
+            "fast transcription (normal accuracy)": "NbAiLab/nb-whisper-medium",
+            "slower transcription (higher accuracy)": "NbAiLab/nb-whisper-large",
+        },
+        "French": {
             "fast transcription (normal accuracy)": "openai/whisper-base",
-            "slower transcription (higher accuracy)": "openai/whisper-large-v2",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v3",
+        },
+        "German": {
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v3",
+        },
+        "Spanish": {
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v3",
+        },
+        "Italian": {
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v3",
+        },
+        "Russian": {
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v3",
+        },
+        "Ukrainian": {
+            "fast transcription (normal accuracy)": "openai/whisper-base",
+            "slower transcription (higher accuracy)": "openai/whisper-large-v3",
         },
     }
 
