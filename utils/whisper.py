@@ -3,12 +3,21 @@ import os
 import shutil
 import torch
 
-from pyannote.audio import Pipeline
+from pyannote.audio import Pipeline, core
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
-from typing import Optional
+from typing import List, Optional, Tuple
 from utils.settings import get_settings
 
 settings = get_settings()
+original_torch_load = torch.load
+
+
+def __trusted_load(*args, **kwargs):
+    kwargs["weights_only"] = False
+    return original_torch_load(*args, **kwargs)
+
+
+torch.load = __trusted_load
 
 
 def get_torch_device() -> tuple:
@@ -28,9 +37,10 @@ def diarization_init(hf_token: str) -> Optional[Pipeline]:
     Initializes the diarization pipeline using HuggingFace's PyAnnote.
     """
     device, _ = get_torch_device()
+    torch.serialization.add_safe_globals([core.task.Specifications])
 
     return Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1", use_auth_token=hf_token
+        "pyannote/speaker-diarization-community-1", token=hf_token
     ).to(torch.device(device))
 
 
@@ -87,7 +97,7 @@ class WhisperAudioTranscriber:
     def __hf_init(self) -> None:
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             self.__model_name,
-            torch_dtype=self.__torch_dtype,
+            dtype=self.__torch_dtype,
             use_safetensors=True,
             cache_dir="cache",
             token=self.__hf_token,
@@ -99,92 +109,10 @@ class WhisperAudioTranscriber:
             model=self.__model_name,
             tokenizer=self.processor.tokenizer,
             feature_extractor=self.processor.feature_extractor,
-            torch_dtype=self.__torch_dtype,
+            dtype=self.__torch_dtype,
             device=self.__device,
-            return_timestamps=True,
-            chunk_length_s=30,
-            stride_length_s=(4, 2),
+            return_timestamps="word",
         )
-
-    def __seconds_to_srt_time(self, seconds) -> str:
-        """
-        Convert seconds (float or string) HH:MM:SS,mmm.
-        """
-
-        seconds = float(seconds)
-        millis = int(round((seconds % 1) * 1000))
-        total_seconds = int(seconds)
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, secs = divmod(remainder, 60)
-
-        return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
-
-    def __parse_timestamp(self, timestamp_str) -> Optional[float]:
-        if timestamp_str is None:
-            return None
-
-        time_part, ms_part = timestamp_str.split(",")
-
-        if not ms_part:
-            ms_part = "0"
-
-        hours, minutes, seconds = map(int, time_part.split(":"))
-        total_seconds = hours * 3600 + minutes * 60 + seconds + int(ms_part) / 1000.0
-
-        return total_seconds
-
-    def __process_transcription(self, items) -> dict:
-        """
-        Normalize and process transcription items.
-        """
-
-        full_transcription = ""
-        segments = []
-        chunks = []
-
-        for index, item in enumerate(items):
-            text = item["text"].strip()
-            start, end = item["timestamp"]
-
-            if not start or not end:
-                continue
-
-            if full_transcription and not full_transcription.endswith(" "):
-                full_transcription += " "
-
-            full_transcription += text
-
-            segments.append(
-                {
-                    "start": start,
-                    "end": end,
-                    "text": text,
-                    "duration": end - start,
-                }
-            )
-
-            chunks.append(
-                {
-                    "timestamp": (start, end),
-                    "timestamp_ms": (
-                        self.__seconds_to_srt_time(start),
-                        self.__seconds_to_srt_time(end),
-                    ),
-                    "text": text,
-                }
-            )
-
-        converted = {
-            "full_transcription": full_transcription,
-            "segments": segments,
-            "chunks": chunks,
-            "speaker_count": 1,
-        }
-
-        self.__result = converted
-        self.__transcribed_seconds = segments[-1]["end"] if segments else 0
-
-        return converted
 
     def transcribe(self) -> dict:
         """
@@ -201,6 +129,127 @@ class WhisperAudioTranscriber:
         self.__process_transcription(result.get("chunks", []))
 
         return self.__transcribed_seconds
+
+    def __format_timestamp(self, seconds: float) -> str:
+        """
+        Convert seconds to SRT timestamp format (HH:MM:SS,mmm)
+        """
+
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millisecs = int((seconds % 1) * 1000)
+
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
+
+    def __split_into_lines(self, words: List[dict], max_chars: int = 42) -> List[str]:
+        """
+        Split words into lines respecting max character limit.
+        """
+
+        lines = []
+        current_line = []
+        current_length = 0
+
+        for word_data in words:
+            word = word_data["text"].strip()
+
+            if not word:
+                continue
+
+            word_length = len(word)
+            space_length = 1 if current_line else 0
+
+            if current_length + space_length + word_length <= max_chars:
+                current_line.append(word)
+                current_length += space_length + word_length
+            else:
+                if current_line:
+                    lines.append(" ".join(current_line))
+                current_line = [word]
+                current_length = word_length
+
+        if current_line:
+            lines.append(" ".join(current_line))
+
+        return lines
+
+    def __process_transcription(
+        self,
+        chunks: List[dict],
+        max_chars: int = 42,
+        max_lines: int = 2,
+        max_duration: float = 7.0,
+        min_duration: float = 1.0,
+    ) -> List[Tuple[float, float, str]]:
+        """
+        Create subtitle blocks following accessibility standards.
+        """
+
+        i = 0
+        subtitles = []
+
+        while i < len(chunks):
+            words = []
+            start_time = chunks[i]["timestamp"][0]
+
+            while i < len(chunks):
+                word = chunks[i]["text"].strip()
+                if word:
+                    words.append(chunks[i])
+
+                end_time = chunks[i]["timestamp"][1]
+                duration = end_time - start_time
+
+                lines = self.__split_into_lines(words, max_chars)
+
+                if len(lines) > max_lines or duration > max_duration:
+                    if len(words) > 1:
+                        words = words[:-1]
+                        end_time = chunks[i - 1]["timestamp"][1]
+                    break
+
+                i += 1
+
+                if word and word[-1] in ".!?,;:":
+                    end_time = chunks[i - 1]["timestamp"][1]
+                    break
+
+            if words:
+                lines = self.__split_into_lines(words, max_chars)
+                subtitle_text = "\n".join(lines[:max_lines])
+                duration = end_time - start_time
+
+                if duration < min_duration and i < len(chunks):
+                    end_time = min(
+                        start_time + min_duration,
+                        chunks[min(i, len(chunks) - 1)]["timestamp"][1],
+                    )
+
+                subtitles.append((start_time, end_time, subtitle_text))
+
+        # Set transcribed seconds to last timestamp in seconds
+        self.__transcribed_seconds = subtitles[-1][1] if subtitles else 0.0
+        self.__result = subtitles
+
+        return subtitles
+
+    def subtitles(self) -> str:
+        """
+        Generate SRT format subtitles from transcript chunks.
+        """
+
+        srt_output = []
+
+        for idx, (start, end, text) in enumerate(self.__result, 1):
+            srt_output.append(f"{idx}")
+            srt_output.append(
+                f"{self.__format_timestamp(start)} --> {self.__format_timestamp(end)}"
+            )
+            srt_output.append(text)
+            srt_output.append("")
+
+        return "\n".join(srt_output)
 
     def diarization(self) -> dict:
         """
@@ -222,24 +271,18 @@ class WhisperAudioTranscriber:
                 "Transcription result is not available. Please transcribe first."
             )
 
-        try:
-            diarization = self.__diarization_pipeline(
-                self.__audio_path, num_speakers=int(self.__speakers)
-            )
-            aligned_segments = self.__align_speakers(
-                self.__result["chunks"], diarization
-            )
+        diarization = self.__diarization_pipeline(
+            self.__audio_path, num_speakers=int(self.__speakers)
+        )
 
-            return {
-                "full_transcription": self.__result["full_transcription"],
-                "segments": aligned_segments,
-                "speaker_count": len(list(diarization.labels())) if diarization else 0,
-            }
-        except Exception as e:
-            self.__logger.error(
-                f"Error during transcription with diarization: {str(e)}"
-            )
-            return None
+        aligned_segments = self.__align_speakers(self.__result, diarization)
+
+        return {
+            "segments": aligned_segments,
+            "speaker_count": len(list(diarization.speaker_diarization.labels()))
+            if diarization
+            else 0,
+        }
 
     def __align_speakers(self, transcription_chunks, diarization) -> list:
         """
@@ -248,10 +291,7 @@ class WhisperAudioTranscriber:
         aligned_segments = []
 
         for chunk in transcription_chunks:
-            chunk_start = chunk["timestamp"][0]
-            chunk_end = chunk["timestamp"][1]
-            chunk_text = chunk["text"]
-
+            chunk_start, chunk_end, chunk_text = chunk
             chunk_middle = (chunk_start + chunk_end) / 2
             dominant_speaker = self.__get_speaker(diarization, chunk_middle)
             active_speakers = self.__get_speakers_in_range(
@@ -275,7 +315,10 @@ class WhisperAudioTranscriber:
         """
         Get the speaker label for a specific time point in the diarization.
         """
-        for segment, _, speaker in diarization.itertracks(yield_label=True):
+
+        for segment, _, speaker in diarization.speaker_diarization.itertracks(
+            yield_label=True
+        ):
             if segment.start <= time_point <= segment.end:
                 return speaker
 
@@ -288,53 +331,19 @@ class WhisperAudioTranscriber:
         """
         active_speakers = set()
 
-        for segment, _, speaker in diarization.itertracks(yield_label=True):
+        for segment, _, speaker in diarization.speaker_diarization.itertracks(
+            yield_label=True
+        ):
             if not (segment.end < start_time or segment.start > end_time):
                 active_speakers.add(speaker)
 
         return list(active_speakers)
 
-    def __timestamp_to_float(self, timestamp: str) -> float:
-        """
-        Convert a timestamp string in the format HH:MM:SS,mmm to float seconds.
-        """
-        time_part, ms_part = timestamp.split(",")
-
-        if not ms_part:
-            ms_part = "0"
-
-        hours, minutes, seconds = map(int, time_part.split(":"))
-        total_seconds = hours * 3600 + minutes * 60 + seconds + int(ms_part) / 1000.0
-
-        return total_seconds
-
-    def subtitles(self) -> str:
-        """
-        Generate SRT subtitles following accessibility rules.
-        """
-        if not self.__result or "chunks" not in self.__result:
-            raise Exception(
-                "Transcription result is not available or does not contain chunks."
-            )
-
-        subtitles = ""
-
-        for index, segment in enumerate(self.__result["segments"]):
-            start_time = self.__seconds_to_srt_time(segment["start"])
-            end_time = self.__seconds_to_srt_time(segment["end"])
-            text = segment["text"].strip()
-
-            subtitles += f"{index + 1}\n"
-            subtitles += f"{start_time} --> {end_time}\n"
-            subtitles += f"{text}\n\n"
-
-        return subtitles
-
 
 if __name__ == "__main__":
     w = WhisperAudioTranscriber(
         logger=logging.getLogger(),
-        audio_path="test.wav",
+        audio_path="test2.wav",
         model_name="openai/whisper-base",
         language="en",
         speakers=2,
@@ -343,3 +352,4 @@ if __name__ == "__main__":
 
     w.transcribe()
     print(w.subtitles())
+    print(w.diarization())
