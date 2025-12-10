@@ -220,6 +220,7 @@ class TranscriptionJob:
                 )
         except Exception as e:
             self.logger.error(f"Error when executing command: {e}")
+            raise e
 
         return True
 
