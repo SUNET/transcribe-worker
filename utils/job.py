@@ -182,7 +182,11 @@ class TranscriptionJob:
 
         transcribed_seconds = transcriber.transcribe()
 
+        if transcribed_seconds is None:
+            return None
+
         srt = transcriber.subtitles()
+
         if self.output_format == "txt":
             drz = transcriber.diarization()
         else:

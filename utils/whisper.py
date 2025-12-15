@@ -277,6 +277,7 @@ class WhisperAudioTranscriber:
             "-m",
             self.__model_name,
             "-sns",
+            "-fa",
             "-f",
             filepath,
         ]
@@ -301,13 +302,17 @@ class WhisperAudioTranscriber:
         if not os.path.exists(self.__audio_path):
             raise FileNotFoundError(f"Audio file {self.__audio_path} does not exist.")
 
-        match self.__backend:
-            case "hf":
-                self.__transcribe_hf(self.__audio_path)
-            case "cpp":
-                self.__transcribe_cpp(self.__audio_path)
-            case _:
-                raise ValueError(f"Unsupported backend: {self.__backend}")
+        try:
+            match self.__backend:
+                case "hf":
+                    self.__transcribe_hf(self.__audio_path)
+                case "cpp":
+                    self.__transcribe_cpp(self.__audio_path)
+                case _:
+                    raise ValueError(f"Unsupported backend: {self.__backend}")
+        except Exception as e:
+            self.__logger.error(f"Error during transcription: {str(e)}")
+            return None
 
         if not self.__result:
             raise Exception("Transcription result is not available.")
