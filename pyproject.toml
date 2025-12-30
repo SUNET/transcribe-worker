@@ -9,7 +9,7 @@ dependencies = [
     "gpustat>=1.1.1",
     "pyannote-audio>=4.0.1",
     "pydantic-settings>=2.12.0",
-    "torch>=2.9.1",
-    "transformers>=4.57.3",
+    "torch",
+    "transformers",
 ]
 

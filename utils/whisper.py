@@ -5,8 +5,9 @@ import torch
 
 from pyannote.audio import Pipeline, core
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
-from typing import List, Optional, Tuple
+from typing import Optional
 from utils.settings import get_settings
+from utils.subtitles import chunks_to_subs
 
 settings = get_settings()
 original_torch_load = torch.load
@@ -72,7 +73,7 @@ class WhisperAudioTranscriber:
         self,
         logger: logging.Logger,
         audio_path: str,
-        model_name: Optional[str] = "KBLab/kb-whisper-base",
+        model_name: Optional[str] = "KBLab/kb-whisper-large",
         language: Optional[str] = "sv",
         speakers: Optional[int] = 0,
         hf_token: Optional[str] = None,
@@ -123,6 +124,7 @@ class WhisperAudioTranscriber:
 
         result = self.pipe(
             self.__audio_path,
+            chunk_length_s=30,
             generate_kwargs={"task": "transcribe", "language": self.__language},
         )
 
@@ -130,126 +132,12 @@ class WhisperAudioTranscriber:
 
         return self.__transcribed_seconds
 
-    def __format_timestamp(self, seconds: float) -> str:
-        """
-        Convert seconds to SRT timestamp format (HH:MM:SS,mmm)
-        """
-
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        millisecs = int((seconds % 1) * 1000)
-
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
-
-    def __split_into_lines(self, words: List[dict], max_chars: int = 42) -> List[str]:
-        """
-        Split words into lines respecting max character limit.
-        """
-
-        lines = []
-        current_line = []
-        current_length = 0
-
-        for word_data in words:
-            word = word_data["text"].strip()
-
-            if not word:
-                continue
-
-            word_length = len(word)
-            space_length = 1 if current_line else 0
-
-            if current_length + space_length + word_length <= max_chars:
-                current_line.append(word)
-                current_length += space_length + word_length
-            else:
-                if current_line:
-                    lines.append(" ".join(current_line))
-                current_line = [word]
-                current_length = word_length
-
-        if current_line:
-            lines.append(" ".join(current_line))
-
-        return lines
-
-    def __process_transcription(
-        self,
-        chunks: List[dict],
-        max_chars: int = 42,
-        max_lines: int = 2,
-        max_duration: float = 7.0,
-        min_duration: float = 1.0,
-    ) -> List[Tuple[float, float, str]]:
-        """
-        Create subtitle blocks following accessibility standards.
-        """
-
-        i = 0
-        subtitles = []
-
-        while i < len(chunks):
-            words = []
-            start_time = chunks[i]["timestamp"][0]
-
-            while i < len(chunks):
-                word = chunks[i]["text"].strip()
-                if word:
-                    words.append(chunks[i])
-
-                end_time = chunks[i]["timestamp"][1]
-                duration = end_time - start_time
-
-                lines = self.__split_into_lines(words, max_chars)
-
-                if len(lines) > max_lines or duration > max_duration:
-                    if len(words) > 1:
-                        words = words[:-1]
-                        end_time = chunks[i - 1]["timestamp"][1]
-                    break
-
-                i += 1
-
-                if word and word[-1] in ".!?,;:":
-                    end_time = chunks[i - 1]["timestamp"][1]
-                    break
-
-            if words:
-                lines = self.__split_into_lines(words, max_chars)
-                subtitle_text = "\n".join(lines[:max_lines])
-                duration = end_time - start_time
-
-                if duration < min_duration and i < len(chunks):
-                    end_time = min(
-                        start_time + min_duration,
-                        chunks[min(i, len(chunks) - 1)]["timestamp"][1],
-                    )
-
-                subtitles.append((start_time, end_time, subtitle_text))
-
-        # Set transcribed seconds to last timestamp in seconds
-        self.__transcribed_seconds = subtitles[-1][1] if subtitles else 0.0
-        self.__result = subtitles
-
-        return subtitles
-
     def subtitles(self) -> str:
         """
         Generate SRT format subtitles from transcript chunks.
         """
 
-        srt_output = []
-
-        for idx, (start, end, text) in enumerate(self.__result, 1):
-            srt_output.append(f"{idx}")
-            srt_output.append(
-                f"{self.__format_timestamp(start)} --> {self.__format_timestamp(end)}"
-            )
-            srt_output.append(text)
-            srt_output.append("")
-
-        return "\n".join(srt_output)
+        return chunks_to_subs(self.__result)
 
     def diarization(self) -> dict:
         """
@@ -277,6 +165,21 @@ class WhisperAudioTranscriber:
 
         aligned_segments = self.__align_speakers(self.__result, diarization)
 
+        # Rename speakers to Speaker_1, Speaker_2, ...
+        speakers = {}
+
+        for segment in aligned_segments:
+            speaker_label = segment["speaker"]
+
+            if speaker_label not in speakers:
+                speakers[speaker_label] = f"SPEAKER_{len(speakers) + 1}"
+
+            segment["speaker"] = speakers[speaker_label]
+
+            print(
+                f"{segment['start']:.2f} - {segment['end']:.2f}: {segment['speaker']} - {segment['text']}"
+            )
+
         return {
             "segments": aligned_segments,
             "speaker_count": len(list(diarization.speaker_diarization.labels()))
@@ -293,6 +196,7 @@ class WhisperAudioTranscriber:
         for chunk in transcription_chunks:
             chunk_start, chunk_end, chunk_text = chunk
             chunk_middle = (chunk_start + chunk_end) / 2
+            chunk_text = chunk_text.replace("\n", "").strip()
             dominant_speaker = self.__get_speaker(diarization, chunk_middle)
             active_speakers = self.__get_speakers_in_range(
                 diarization, chunk_start, chunk_end
@@ -302,7 +206,7 @@ class WhisperAudioTranscriber:
                 {
                     "start": chunk_start,
                     "end": chunk_end,
-                    "text": chunk_text.strip(),
+                    "text": chunk_text,
                     "speaker": dominant_speaker,
                     "active_speakers": active_speakers,
                     "duration": chunk_end - chunk_start,
@@ -343,13 +247,13 @@ class WhisperAudioTranscriber:
 if __name__ == "__main__":
     w = WhisperAudioTranscriber(
         logger=logging.getLogger(),
-        audio_path="test2.wav",
-        model_name="openai/whisper-base",
-        language="en",
-        speakers=2,
+        audio_path="test.wav",
+        model_name="kblab/kb-whisper-large",
+        language="sv",
+        speakers=0,
         hf_token=settings.HF_TOKEN,
     )
 
     w.transcribe()
     print(w.subtitles())
-    print(w.diarization())
+    # print(w.diarization())
