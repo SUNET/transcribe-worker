@@ -1,7 +1,8 @@
-import json
+import ffmpeg
 import logging
+import os
 import requests
-import subprocess
+import tempfile
 
 from enum import Enum
 from pathlib import Path
@@ -172,7 +173,7 @@ class TranscriptionJob:
         transcriber = WhisperAudioTranscriber(
             self.logger,
             "hf" if self.hf_whisper else "cpp",
-            str(Path(self.api_file_storage_dir) / f"{self.filename}.wav"),
+            self.__transcoded_data,
             model_name=self.model,
             language=self.language,
             speakers=self.speakers,
@@ -185,97 +186,62 @@ class TranscriptionJob:
         if transcribed_seconds is None:
             return None
 
-        srt = transcriber.subtitles()
+        self.__srt = transcriber.subtitles()
 
         if self.output_format == "txt":
-            drz = transcriber.diarization()
+            self.__drz = transcriber.diarization()
         else:
-            drz = None
-
-        with open(
-            Path(self.api_file_storage_dir) / f"{self.filename}.srt", "w"
-        ) as srt_file:
-            srt_file.write(srt)
-
-        if drz:
-            with open(
-                Path(self.api_file_storage_dir) / f"{self.filename}.json", "w"
-            ) as json_file:
-                json_file.write(json.dumps(dict(drz)))
+            self.__drz = None
 
         return transcribed_seconds
-
-    def __run_cmd(self, command: list) -> bool:
-        """
-        Run a command using subprocess.run.
-        Raises an exception if the command fails.
-        """
-        try:
-            command_str = " ".join(command)
-            self.logger.debug(f"Executing command: {command_str}")
-            result = subprocess.run(command, capture_output=True)
-
-            if result.returncode != 0:
-                raise subprocess.CalledProcessError(
-                    returncode=result.returncode,
-                    cmd=command_str,
-                    output=result.stdout.decode(),
-                    stderr=result.stderr.decode(),
-                )
-        except Exception as e:
-            self.logger.error(f"Error when executing command: {e}")
-            raise e
-
-        return True
 
     def __downscale_file(self) -> bool:
         """
         Downscale videos to a smaller size.
         """
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(self.__downloaded_data)
+            tmp_path = tmp.name
 
-        output_filename = f"{self.filename}.mp4"
-        command = [
-            settings.FFMPEG_PATH,
-            "-i",
-            str(Path(self.api_file_storage_dir) / self.filename),
-            "-vf",
-            "scale=-2:360:flags=lanczos",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "22",
-            "-profile:v",
-            "high",
-            "-level",
-            "3.1",
-            "-pix_fmt",
-            "yuv420p",
-            "-g",
-            "48",
-            "-keyint_min",
-            "48",
-            "-sc_threshold",
-            "0",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-ar",
-            "48000",
-            "-ac",
-            "2",
-            "-movflags",
-            "+faststart",
-            str(Path(self.api_file_storage_dir) / output_filename),
-            "-y",
-        ]
-        try:
-            self.__run_cmd(command)
-        except Exception as e:
-            self.logger.error(f"Error during downscaling: {e}")
-            return False
+            self.__downscaled_file = tempfile.gettempdir() + "/" + self.uuid + ".mp4"
+
+            try:
+                stdout, stderr = (
+                    ffmpeg.input(tmp_path)
+                    .filter(
+                        "scale",
+                        -2,
+                        360,
+                        flags="lanczos",
+                    )
+                    .output(
+                        self.__downscaled_file,
+                        format="mp4",
+                        vcodec="libx264",
+                        preset="veryfast",
+                        crf=22,
+                        **{
+                            "profile:v": "high",
+                            "level": "3.1",
+                            "pix_fmt": "yuv420p",
+                            "g": 48,
+                            "keyint_min": 48,
+                            "sc_threshold": 0,
+                            "c:a": "aac",
+                            "b:a": "128k",
+                            "ar": 48000,
+                            "ac": 2,
+                            "movflags": "+faststart",
+                        },
+                    )
+                ).run(capture_stdout=True, capture_stderr=True)
+
+            except Exception as e:
+                self.logger.error(f"FFmpeg error during downscaling: {e}")
+                os.unlink(self.__downscaled_file)
+                return False
+            finally:
+                os.unlink(tmp_path)
 
         return True
 
@@ -285,27 +251,17 @@ class TranscriptionJob:
         The transcoded format should be 16kHz mono WAV.
         """
 
-        output_filename = f"{self.filename}.wav"
-        command = [
-            settings.FFMPEG_PATH,
-            "-i",
-            str(Path(self.api_file_storage_dir) / self.filename),
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            "-f",
-            "wav",
-            "-y",
-            str(Path(self.api_file_storage_dir) / output_filename),
-            "-y",
-        ]
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as tmp:
+            tmp.write(self.__downloaded_data)
+            tmp_path = tmp.name
 
-        try:
-            self.__run_cmd(command)
-        except Exception as e:
-            self.logger.error(f"Error during transcoding: {e}")
-            return False
+            stdout, stderr = (
+                ffmpeg.input(tmp_path)
+                .output("pipe:1", format="wav", acodec="pcm_s16le", ac=1, ar="16k")
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+
+            self.__transcoded_data = stdout
 
         return True
 
@@ -346,10 +302,7 @@ class TranscriptionJob:
                 self.logger.error(f"Error downloading file: {response.status_code}")
                 raise Exception("File not downloaded")
 
-            file_path = Path(self.api_file_storage_dir) / self.uuid
-
-            with open(file_path, "wb") as f:
-                f.write(response.content)
+            self.__downloaded_data = response.content
 
         except Exception as e:
             self.logger.error(f"Error downloading file: {e}")
@@ -381,7 +334,7 @@ class TranscriptionJob:
 
         return True
 
-    def __upload_mp4(self, file_path) -> bool:
+    def __upload_mp4(self) -> bool:
         """
         Upload the MP4 file to the API broker.
         """
@@ -389,9 +342,11 @@ class TranscriptionJob:
         try:
             response = requests.put(
                 f"{self.api_url}/{self.user_id}/{self.uuid}/file",
-                files={"file": open(file_path, "rb")},
+                files={"file": open(self.__downscaled_file, "rb")},
                 cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
             )
+            os.unlink(self.__downscaled_file)
+
             response.raise_for_status()
         except requests.RequestException as e:
             self.logger.error(f"Error uploading MP4 file: {e}")
@@ -408,36 +363,29 @@ class TranscriptionJob:
             "Content-Type": "application/json",
         }
 
-        for output_format in ["srt", "vtt", "json", "txt", "mp4"]:
+        for output_format in ["srt", "json", "mp4"]:
             try:
-                file_path = (
-                    Path(self.api_file_storage_dir) / f"{self.uuid}.{output_format}"
-                )
-
-                if not file_path.exists():
-                    continue
-
                 if output_format == "mp4":
-                    self.__upload_mp4(file_path)
+                    self.__upload_mp4()
                     continue
 
-                with open(file_path, "rb") as fd:
-                    data = fd.read()
-                    json_data = {}
+                json_data = {}
 
-                    if output_format == "json":
-                        json_data["result"] = json.loads(data.decode("utf-8"))
-                    elif output_format == "srt":
-                        json_data["result"] = data.decode("utf-8")
+                if output_format == "json":
+                    if not self.__drz:
+                        continue
+                    json_data["result"] = self.__drz
+                elif output_format == "srt":
+                    json_data["result"] = self.__srt
 
-                    json_data["format"] = output_format
-                    response = requests.put(
-                        f"{self.api_url}/{self.user_id}/{self.uuid}/result",
-                        json=json_data,
-                        headers=header,
-                        cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
-                    )
-                    response.raise_for_status()
+                json_data["format"] = output_format
+                response = requests.put(
+                    f"{self.api_url}/{self.user_id}/{self.uuid}/result",
+                    json=json_data,
+                    headers=header,
+                    cert=(settings.SSL_CERTFILE, settings.SSL_KEYFILE),
+                )
+                response.raise_for_status()
             except requests.RequestException as e:
                 self.logger.error(f"Error uploading {output_format} file: {e}")
                 return False

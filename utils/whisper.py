@@ -2,10 +2,9 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import torch
-import uuid
 
-from pathlib import Path
 from pyannote.audio import Pipeline
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 from typing import Optional
@@ -42,7 +41,7 @@ class WhisperAudioTranscriber:
         self,
         logger: logging.Logger,
         backend: str,
-        audio_path: str,
+        transcoded_data: bytes = None,
         model_name: Optional[str] = "KBLab/kb-whisper-base",
         language: Optional[str] = "sv",
         speakers: Optional[int] = 0,
@@ -55,7 +54,7 @@ class WhisperAudioTranscriber:
         file path, model name,
         """
 
-        self.__audio_path = audio_path
+        self.__transcoded_data = transcoded_data
         self.__model_name = model_name
         self.__hf_token = hf_token
         self.__device, self.__torch_dtype = get_torch_device()
@@ -118,7 +117,7 @@ class WhisperAudioTranscriber:
 
         return self.__result
 
-    def __run_cmd(self, command: list) -> bool:
+    def __run_cmd(self, command: list, data: bytes) -> bool:
         """
         Run a command using subprocess.run.
         Raises an exception if the command fails.
@@ -126,7 +125,7 @@ class WhisperAudioTranscriber:
         try:
             command_str = " ".join(command)
             self.__logger.debug(f"Running command: {command_str}")
-            result = subprocess.run(command, capture_output=True)
+            result = subprocess.run(command, capture_output=True, input=data)
 
             if result.returncode != 0:
                 raise subprocess.CalledProcessError(
@@ -139,7 +138,7 @@ class WhisperAudioTranscriber:
             self.__logger.error(f"Error running command: {e}")
             return None
 
-        return True
+        return result.stdout
 
     def __parse_timestamp(self, timestamp_str) -> Optional[float]:
         if timestamp_str is None:
@@ -265,32 +264,29 @@ class WhisperAudioTranscriber:
 
         return self.__process_transcription(result.get("chunks", []), source="hf")
 
-    def __transcribe_cpp(self, filepath: str) -> dict:
-        temp_filename = str(uuid.uuid4())
+    def __transcribe_cpp(self) -> dict:
         command = [
             self.__whisper_cpp_path,
             "-l",
             self.__language,
             "-ojf",
             "-of",
-            str(Path(settings.FILE_STORAGE_DIR) / temp_filename),
+            "-",
             "-m",
             self.__model_name,
             "-sns",
             "-fa",
             "-f",
-            filepath,
+            "-",
         ]
 
-        if not self.__run_cmd(command):
+        data = self.__run_cmd(command, self.__transcoded_data)
+
+        if not data:
             raise Exception("Failed to run whisper.cpp command")
 
-        json_path = Path(settings.FILE_STORAGE_DIR) / f"{temp_filename}.json"
-        with open(json_path, "rb") as f:
-            json_str = f.read()
-        os.remove(json_path)
+        result = json.loads(data.decode("iso-8859-1"))
 
-        result = json.loads(json_str.decode("iso-8859-1"))
         return self.__process_transcription(
             result.get("transcription", []), source="cpp"
         )
@@ -299,15 +295,12 @@ class WhisperAudioTranscriber:
         """
         Transcribe the audio file and return the transcription result.
         """
-        if not os.path.exists(self.__audio_path):
-            raise FileNotFoundError(f"Audio file {self.__audio_path} does not exist.")
-
         try:
             match self.__backend:
                 case "hf":
                     self.__transcribe_hf(self.__audio_path)
                 case "cpp":
-                    self.__transcribe_cpp(self.__audio_path)
+                    self.__transcribe_cpp()
                 case _:
                     raise ValueError(f"Unsupported backend: {self.__backend}")
         except Exception as e:
@@ -340,22 +333,29 @@ class WhisperAudioTranscriber:
             )
 
         try:
-            diarization = self.__diarization_pipeline(
-                self.__audio_path, num_speakers=int(self.__speakers)
-            )
-            aligned_segments = self.__align_speakers(
-                self.__result["chunks"], diarization
-            )
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as tmp:
+                tmp.write(self.__transcoded_data)
+                tmp_path = tmp.name
 
-            return {
-                "full_transcription": self.__result["full_transcription"],
-                "segments": aligned_segments,
-                "speaker_count": len(list(diarization.labels())) if diarization else 0,
-            }
+                diarization = self.__diarization_pipeline(
+                    tmp_path, num_speakers=int(self.__speakers)
+                )
+                aligned_segments = self.__align_speakers(
+                    self.__result["chunks"], diarization
+                )
+
+                return {
+                    "full_transcription": self.__result["full_transcription"],
+                    "segments": aligned_segments,
+                    "speaker_count": len(list(diarization.labels()))
+                    if diarization
+                    else 0,
+                }
         except Exception as e:
             self.__logger.error(
                 f"Error during transcription with diarization: {str(e)}"
             )
+
             return None
 
     def __align_speakers(self, transcription_chunks, diarization) -> list:
