@@ -175,6 +175,7 @@ cython_debug/
 
 # env
 .env
+.models
 
 # Emacs
 *~
