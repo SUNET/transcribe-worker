@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     WHISPER_CPP_PATH: str = "whisper-cli"
 
     # Path to JSON file with whisper.cpp models
-    WHISPER_MODELS_CPP_FILE: str = ".models" 
+    WHISPER_MODELS_CPP_FILE: str = "" 
 
     # Mapping between language and model
     # These are used if no file is supplied
