@@ -1,7 +1,10 @@
 import os
 
+import json
+from pathlib import Path
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
 from typing import ClassVar
 from utils.args import parse_arguments
 
@@ -38,7 +41,11 @@ class Settings(BaseSettings):
     # whisper.cpp path
     WHISPER_CPP_PATH: str = "whisper-cli"
 
+    # Path to JSON file with whisper.cpp models
+    WHISPER_MODELS_CPP_FILE: str = "" 
+
     # Mapping between language and model
+    # These are used if no file is supplied
     WHISPER_MODELS_CPP: ClassVar[dict[str, dict[str, str]]] = {
         "Swedish": {
             "fast transcription (normal accuracy)": "sv_base.bin",
@@ -116,6 +123,21 @@ class Settings(BaseSettings):
             "slower transcription (higher accuracy)": "openai/whisper-large-v2",
         },
     }
+
+    @model_validator(mode="after")
+    def load_whisper_models_cpp(self) -> "Settings":
+        if not self.WHISPER_MODELS_CPP_FILE:
+            return self
+
+        path = Path(self.WHISPER_MODELS_CPP_FILE)
+        if not path.exists():
+            return self
+
+        # Load cpp model config if available.
+        self.__class__.WHISPER_MODELS_CPP = json.loads(
+            path.read_text(encoding="utf-8")
+        )
+        return self
 
 
 @lru_cache
