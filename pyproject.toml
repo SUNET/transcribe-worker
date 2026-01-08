@@ -111,7 +111,7 @@ dependencies = [
     "typing-extensions==4.13.2",
     "typing-inspection==0.4.0",
     "tzdata==2025.2",
-    "urllib3==2.4.0",
+    "urllib3==2.6.3",
     "wcwidth==0.2.14",
     "yarl==1.20.1",
 ]
