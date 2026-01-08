@@ -278,6 +278,8 @@ class WhisperAudioTranscriber:
             self.__model_name,
             "-sns",
             "-fa",
+            "--max-len",
+            "84",
             "-f",
             filepath,
         ]
@@ -286,6 +288,7 @@ class WhisperAudioTranscriber:
             raise Exception("Failed to run whisper.cpp command")
 
         json_path = Path(settings.FILE_STORAGE_DIR) / f"{temp_filename}.json"
+
         with open(json_path, "rb") as f:
             json_str = f.read()
         os.remove(json_path)
