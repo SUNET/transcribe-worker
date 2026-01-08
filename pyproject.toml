@@ -25,7 +25,7 @@ dependencies = [
     "daemonize==2.5.0",
     "docopt==0.6.2",
     "einops==0.8.1",
-    "filelock==3.18.0",
+    "filelock==3.20.1",
     "fonttools==4.58.2",
     "frozenlist==1.7.0",
     "fsspec==2025.5.1",
