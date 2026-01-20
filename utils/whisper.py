@@ -228,6 +228,61 @@ class WhisperAudioTranscriber:
 
             duration = end_time - start_time
 
+            # If the text is longer than 90 characters, split it in the middle and adjust timestamps.
+            if len(text) > 90:
+                mid_index = len(text) // 2
+                split_index = text.rfind(" ", 0, mid_index)
+
+                if split_index == -1:
+                    split_index = mid_index
+
+                first_part = text[:split_index].strip()
+                second_part = text[split_index:].strip()
+
+                mid_time = start_time + duration / 2
+
+                segments.append(
+                    {
+                        "start": start_time,
+                        "end": mid_time,
+                        "text": first_part,
+                        "duration": mid_time - start_time,
+                    }
+                )
+
+                segments.append(
+                    {
+                        "start": mid_time,
+                        "end": end_time,
+                        "text": second_part,
+                        "duration": end_time - mid_time,
+                    }
+                )
+
+                chunks.append(
+                    {
+                        "timestamp": (start_time, mid_time),
+                        "timestamp_ms": (
+                            ts_ms[0],
+                            self.__seconds_to_srt_time(str(mid_time)),
+                        ),
+                        "text": first_part,
+                    }
+                )
+
+                chunks.append(
+                    {
+                        "timestamp": (mid_time, end_time),
+                        "timestamp_ms": (
+                            self.__seconds_to_srt_time(str(mid_time)),
+                            ts_ms[1],
+                        ),
+                        "text": second_part,
+                    }
+                )
+
+                continue
+
             segments.append(
                 {
                     "start": start_time,
