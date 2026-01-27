@@ -29,11 +29,12 @@ def get_torch_device() -> tuple:
 def diarization_init(hf_token: str) -> Optional[Pipeline]:
     """
     Initializes the diarization pipeline using HuggingFace's PyAnnote.
+    Uses the community version for better performance.
     """
     device, _ = get_torch_device()
 
     return Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1", use_auth_token=hf_token
+        "pyannote/speaker-diarization-community-1", token=hf_token
     ).to(torch.device(device))
 
 
@@ -158,6 +159,21 @@ class WhisperAudioTranscriber:
 
         return total_seconds
 
+    def __calculate_avg_score(self, tokens: list) -> Optional[float]:
+        """
+        Calculate the average probability score from token 'p' values.
+        Excludes special tokens like [_BEG_].
+        """
+        scores = [
+            token.get("p", 0)
+            for token in tokens
+            if token.get("text", "").strip()
+            and not token.get("text", "").startswith("[")
+        ]
+        if scores:
+            return round(sum(scores) / len(scores), 4)
+        return None
+
     def __process_transcription(self, items, source: str) -> dict:
         """
         Normalize and process transcription items from either HF or
@@ -189,6 +205,11 @@ class WhisperAudioTranscriber:
                 full_transcription += " "
 
             full_transcription += text
+
+            # Calculate average score for cpp backend
+            avg_score = None
+            if source == "cpp" and "tokens" in item:
+                avg_score = self.__calculate_avg_score(item["tokens"])
 
             if source == "hf":
                 start, end = item["timestamp"]
@@ -247,6 +268,7 @@ class WhisperAudioTranscriber:
                         "end": mid_time,
                         "text": first_part,
                         "duration": mid_time - start_time,
+                        "avg_score": avg_score,
                     }
                 )
 
@@ -256,6 +278,7 @@ class WhisperAudioTranscriber:
                         "end": end_time,
                         "text": second_part,
                         "duration": end_time - mid_time,
+                        "avg_score": avg_score,
                     }
                 )
 
@@ -267,6 +290,7 @@ class WhisperAudioTranscriber:
                             self.__seconds_to_srt_time(str(mid_time)),
                         ),
                         "text": first_part,
+                        "avg_score": avg_score,
                     }
                 )
 
@@ -278,6 +302,7 @@ class WhisperAudioTranscriber:
                             ts_ms[1],
                         ),
                         "text": second_part,
+                        "avg_score": avg_score,
                     }
                 )
 
@@ -289,6 +314,7 @@ class WhisperAudioTranscriber:
                     "end": end_time,
                     "text": text,
                     "duration": duration,
+                    "avg_score": avg_score,
                 }
             )
 
@@ -297,6 +323,7 @@ class WhisperAudioTranscriber:
                     "timestamp": (start_time, end_time),
                     "timestamp_ms": ts_ms,
                     "text": text,
+                    "avg_score": avg_score,
                 }
             )
 
@@ -394,24 +421,16 @@ class WhisperAudioTranscriber:
                 "Transcription result is not available. Please transcribe first."
             )
 
-        try:
-            diarization = self.__diarization_pipeline(
-                self.__audio_path, num_speakers=int(self.__speakers)
-            )
-            aligned_segments = self.__align_speakers(
-                self.__result["chunks"], diarization
-            )
+        diarization = self.__diarization_pipeline(
+            self.__audio_path, num_speakers=int(self.__speakers)
+        )
+        aligned_segments = self.__align_speakers(self.__result["chunks"], diarization)
 
-            return {
-                "full_transcription": self.__result["full_transcription"],
-                "segments": aligned_segments,
-                "speaker_count": len(list(diarization.labels())) if diarization else 0,
-            }
-        except Exception as e:
-            self.__logger.error(
-                f"Error during transcription with diarization: {str(e)}"
-            )
-            return None
+        return {
+            "full_transcription": self.__result["full_transcription"],
+            "segments": aligned_segments,
+            "speaker_count": len(list(diarization.speaker_diarization.labels())) if diarization else 0,
+        }
 
     def __align_speakers(self, transcription_chunks, diarization) -> list:
         """
@@ -423,6 +442,7 @@ class WhisperAudioTranscriber:
             chunk_start = chunk["timestamp"][0]
             chunk_end = chunk["timestamp"][1]
             chunk_text = chunk["text"]
+            avg_score = chunk.get("avg_score")
 
             chunk_middle = (chunk_start + chunk_end) / 2
             dominant_speaker = self.__get_speaker(diarization, chunk_middle)
@@ -430,28 +450,40 @@ class WhisperAudioTranscriber:
                 diarization, chunk_start, chunk_end
             )
 
-            aligned_segments.append(
-                {
-                    "start": chunk_start,
-                    "end": chunk_end,
-                    "text": chunk_text.strip(),
-                    "speaker": dominant_speaker,
-                    "active_speakers": active_speakers,
-                    "duration": chunk_end - chunk_start,
-                }
-            )
+            segment = {
+                "start": chunk_start,
+                "end": chunk_end,
+                "text": chunk_text.strip(),
+                "speaker": dominant_speaker,
+                "active_speakers": active_speakers,
+                "duration": chunk_end - chunk_start,
+            }
+
+            if avg_score is not None:
+                segment["avg_score"] = avg_score
+
+            aligned_segments.append(segment)
 
         return aligned_segments
+
+    def __normalize_speaker_name(self, speaker: str) -> str:
+        """
+        Normalize speaker names to a consistent format (Speaker_00, Speaker_01, etc).
+        """
+        if speaker.startswith("SPEAKER_"):
+            num = speaker.replace("SPEAKER_", "")
+            return f"Speaker_{num}"
+        return speaker
 
     def __get_speaker(self, diarization, time_point) -> str:
         """
         Get the speaker label for a specific time point in the diarization.
         """
-        for segment, _, speaker in diarization.itertracks(yield_label=True):
+        for segment, _, speaker in diarization.speaker_diarization.itertracks(yield_label=True):
             if segment.start <= time_point <= segment.end:
-                return speaker
+                return self.__normalize_speaker_name(speaker)
 
-        return "UNKNOWN"
+        return "Speaker_00"
 
     def __get_speakers_in_range(self, diarization, start_time, end_time) -> list:
         """
@@ -460,9 +492,9 @@ class WhisperAudioTranscriber:
         """
         active_speakers = set()
 
-        for segment, _, speaker in diarization.itertracks(yield_label=True):
+        for segment, _, speaker in diarization.speaker_diarization.itertracks(yield_label=True):
             if not (segment.end < start_time or segment.start > end_time):
-                active_speakers.add(speaker)
+                active_speakers.add(self.__normalize_speaker_name(speaker))
 
         return list(active_speakers)
 
@@ -528,3 +560,22 @@ class WhisperAudioTranscriber:
         new_caption = f"{first_line}\n{second_line}"
 
         return new_caption
+
+
+if __name__ == "__main__":
+    logger = logging.getLogger("whisper_transcriber")
+
+    audio_file = "test.wav"
+    transcriber = WhisperAudioTranscriber(
+        logger=logger,
+        backend="cpp",
+        audio_path=audio_file,
+        model_name="models/sv_large.bin",
+        language="sv",
+        speakers=2,
+    )
+
+    transcribed_seconds = transcriber.transcribe()
+    diarization_result = transcriber.diarization()
+
+    print(diarization_result)
