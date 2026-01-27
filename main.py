@@ -19,6 +19,7 @@ foreground, pidfile, zap, _, _, _, no_healthcheck = parse_arguments()
 
 if not zap:
     from utils.job import TranscriptionJob
+    from utils.inference import start_inference_client
 
 
 def healthcheck() -> None:
@@ -95,6 +96,9 @@ def main() -> None:
         processes = []
     else:
         processes = [mp.Process(target=healthcheck)]
+
+    # Add inference client process
+    processes.append(mp.Process(target=start_inference_client))
 
     processes += [
         mp.Process(target=mainloop, args=(i,)) for i in range(settings.WORKERS)

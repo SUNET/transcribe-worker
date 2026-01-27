@@ -189,6 +189,7 @@ class TranscriptionJob:
 
         if self.output_format == "txt":
             drz = transcriber.diarization()
+            print(drz)
         else:
             drz = None
 

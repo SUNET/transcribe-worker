@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     API_VERSION: str = "v1"
     FFMPEG_PATH: str = "ffmpeg"
 
+    # Ollama configuration
+    OLLAMA_URL: str = "http://localhost:11434"
+
     # HF Whisper configuration.
     HF_WHISPER: bool = False
     HF_TOKEN: str = ""

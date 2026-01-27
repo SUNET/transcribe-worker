@@ -168,6 +168,7 @@ class WhisperAudioTranscriber:
         chunks = []
 
         for index, item in enumerate(items):
+            print(item)
             text = item.get("text", "").strip()
 
             if not text:
